@@ -5,7 +5,7 @@ import io
 import pytest
 from PIL import Image
 
-from src.multimodal.image_pipeline import ImagePipeline, ImageProcessingError
+from src.multimodal.image_pipeline import ImagePipeline
 from src.multimodal.exceptions import InputValidationError
 
 

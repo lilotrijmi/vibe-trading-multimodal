@@ -30,23 +30,19 @@ class InputClassifier:
         if not stripped:
             return Attachment(type=AttachmentType.TEXT, source="")
 
-        # Image data URI
         if stripped.startswith("data:image/"):
             return Attachment(type=AttachmentType.IMAGE_DATA_URI, source=stripped)
 
-        # URL: has scheme + netloc
         parsed = urlparse(stripped)
         if parsed.scheme in ("http", "https") and parsed.netloc:
             return Attachment(type=AttachmentType.URL, source=stripped)
 
-        # Local path: starts with / or ./ or ../ or has drive letter or known image ext
         if (
             stripped.startswith("/")
             or stripped.startswith("./")
             or stripped.startswith("../")
-            or (len(stripped) > 2 and stripped[1] == ":")  # Windows drive
+            or (len(stripped) > 2 and stripped[1] == ":")
         ):
             return Attachment(type=AttachmentType.PATH, source=stripped)
 
-        # Default: text
         return Attachment(type=AttachmentType.TEXT, source=stripped)

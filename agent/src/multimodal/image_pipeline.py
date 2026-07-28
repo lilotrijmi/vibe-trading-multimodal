@@ -9,9 +9,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from src.multimodal.exceptions import ImageProcessingError, InputValidationError
-
-__all__ = ["ImagePipeline", "ImageProcessingError", "ProcessedImage"]
+from src.multimodal.exceptions import InputValidationError
 
 _ALLOWED_MIME = frozenset({"image/png", "image/jpeg", "image/webp", "image/gif"})
 
@@ -72,24 +70,19 @@ class ImagePipeline:
         except Exception as exc:
             raise InputValidationError(f"invalid image data: {exc}") from exc
 
-        # Reopen for resize (verify() invalidates the image)
         img = Image.open(io.BytesIO(raw))
         if img.mode not in ("RGB", "RGBA"):
             img = img.convert("RGB")
 
-        # Resize if too large
         if max(img.size) > self._max_dimension:
             img.thumbnail((self._max_dimension, self._max_dimension), Image.LANCZOS)
 
-        # Encode back to PNG
         out = io.BytesIO()
         img.save(out, format="PNG")
         out_bytes = out.getvalue()
 
-        # Hash
         hash_val = hashlib.sha256(out_bytes).hexdigest()
 
-        # Persist
         persisted_path: Path | None = None
         if self._storage is not None:
             if not self._storage.has(hash_val):
