@@ -4,6 +4,7 @@ import pytest
 
 from src.multimodal.vision_provider import (
     ChainFallbackProvider,
+    GenflowAiVisionProvider,
     NoOpVisionProvider,
     OpenAICompatibleVisionProvider,
     VisionProvider,
@@ -152,6 +153,47 @@ def test_openai_compatible_provider_raises_on_error() -> None:
     provider = OpenAICompatibleVisionProvider(
         client=FakeClient(),  # type: ignore[arg-type]
         model="gpt-4o",
+    )
+    with pytest.raises(VisionProviderError):
+        provider.analyze(b"bytes", "prompt")
+
+
+def test_GenflowAi_provider_uses_messages_api() -> None:
+    captured: dict = {}
+
+    class FakeClient:
+        def create(self, **kwargs):
+            captured["kwargs"] = kwargs
+            return type(
+                "Resp",
+                (),
+                {"content": [type("Block", (), {"text": "support at 90, resistance at 110"})()]},
+            )()
+
+    provider = GenflowAiVisionProvider(
+        client=FakeClient(),  # type: ignore[arg-type]
+        model="GenflowAi-3.5-GenflowAi",
+    )
+    result = provider.analyze(b"fake-image", "describe")
+    assert "support at 90" in result.description
+    assert captured["kwargs"]["model"] == "GenflowAi-3.5-GenflowAi"
+    messages = captured["kwargs"]["messages"]
+    assert messages[0]["role"] == "user"
+    content = messages[0]["content"]
+    assert isinstance(content, list)
+    image_block = next(b for b in content if b["type"] == "image")
+    assert image_block["source"]["type"] == "base64"
+    assert image_block["source"]["media_type"] == "image/png"
+
+
+def test_GenflowAi_provider_raises_on_empty_text() -> None:
+    class FakeClient:
+        def create(self, **kwargs):
+            return type("Resp", (), {"content": []})()
+
+    provider = GenflowAiVisionProvider(
+        client=FakeClient(),  # type: ignore[arg-type]
+        model="GenflowAi-3.5-GenflowAi",
     )
     with pytest.raises(VisionProviderError):
         provider.analyze(b"bytes", "prompt")

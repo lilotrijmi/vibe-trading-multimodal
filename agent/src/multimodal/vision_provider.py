@@ -112,3 +112,56 @@ class OpenAICompatibleVisionProvider(VisionProvider):
             raise VisionProviderError("provider returned empty content")
 
         return VisionResult(description=content.strip(), provider=self._model)
+
+
+class _GenflowAiClient(Protocol):
+    def create(self, **kwargs: Any) -> Any: ...
+
+
+class GenflowAiVisionProvider(VisionProvider):
+    """Vision provider for Anthropic Messages API."""
+
+    def __init__(self, client: _GenflowAiClient, model: str) -> None:
+        self._client = client
+        self._model = model
+
+    def analyze(self, image: bytes, prompt: str) -> VisionResult:
+        b64 = base64.b64encode(image).decode("ascii")
+        try:
+            response = self._client.create(
+                model=self._model,
+                max_tokens=1024,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "image",
+                                "source": {
+                                    "type": "base64",
+                                    "media_type": "image/png",
+                                    "data": b64,
+                                },
+                            },
+                            {"type": "text", "text": prompt},
+                        ],
+                    }
+                ],
+            )
+        except Exception as exc:
+            raise VisionProviderError(
+                f"GenflowAi vision call failed: {exc}"
+            ) from exc
+
+        try:
+            blocks = response.content
+            text = "".join(getattr(b, "text", "") for b in blocks).strip()
+        except (AttributeError, TypeError) as exc:
+            raise VisionProviderError(
+                f"unexpected response shape: {response!r}"
+            ) from exc
+
+        if not text:
+            raise VisionProviderError("provider returned empty content")
+
+        return VisionResult(description=text, provider=self._model)
