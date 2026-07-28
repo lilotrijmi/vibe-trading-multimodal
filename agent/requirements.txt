@@ -62,3 +62,8 @@ ddgs>=6.0.0
 jinja2>=3.1.0
 matplotlib>=3.7.0
 weasyprint>=60.0
+
+# Multimodal (image + URL) — added 2026-07-28
+trafilatura>=2.0.0
+bleach>=6.0.0
+sqlalchemy>=2.0.0

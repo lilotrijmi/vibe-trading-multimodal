@@ -165,6 +165,10 @@ async def _run_startup_preflight() -> None:
     if get_env_config().agent_tuning.vibe_trading_channels_auto_start:
         await _start_channel_runtime()
 
+    # Wire multimodal subsystem (image + URL adapter)
+    from src.api.multimodal_startup import init_multimodal_subsystem
+    init_multimodal_subsystem()
+
 
 @app.on_event("shutdown")
 async def _stop_scheduled_research_on_shutdown() -> None:
