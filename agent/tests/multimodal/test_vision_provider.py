@@ -6,7 +6,9 @@ from src.multimodal.vision_provider import (
     VisionProvider,
     VisionResult,
     NoOpVisionProvider,
+    ChainFallbackProvider,
 )
+from src.multimodal.exceptions import VisionProviderError
 
 
 class FakeVisionProvider(VisionProvider):
@@ -40,3 +42,61 @@ def test_vision_result_is_immutable() -> None:
     result = VisionResult(description="x", provider="fake")
     with pytest.raises(FrozenInstanceError):
         result.description = "y"  # type: ignore[misc]
+
+
+class FlakyVisionProvider(VisionProvider):
+    def __init__(self, response: str | None, failures: int = 1) -> None:
+        self._response = response
+        self._remaining_failures = failures
+        self.calls = 0
+
+    def analyze(self, image: bytes, prompt: str) -> VisionResult:
+        self.calls += 1
+        if self._remaining_failures > 0:
+            self._remaining_failures -= 1
+            raise VisionProviderError("simulated provider failure")
+        assert self._response is not None
+        return VisionResult(description=self._response, provider="flaky")
+
+
+def test_chain_returns_first_provider_result() -> None:
+    primary = FakeVisionProvider("primary-response")
+    secondary = FakeVisionProvider("secondary-response")
+    chain = ChainFallbackProvider([primary, secondary])
+
+    result = chain.analyze(b"img", "describe")
+
+    assert result.description == "primary-response"
+    assert result.provider == "fake"
+    assert len(primary.calls) == 1
+    assert len(secondary.calls) == 0
+
+
+def test_chain_falls_back_when_primary_raises() -> None:
+    primary = FlakyVisionProvider("primary-response", failures=1)
+    secondary = FakeVisionProvider("secondary-response")
+    chain = ChainFallbackProvider([primary, secondary])
+
+    result = chain.analyze(b"img", "describe")
+
+    assert result.description == "secondary-response"
+    assert primary.calls == 1
+    assert len(secondary.calls) == 1
+
+
+def test_chain_raises_when_all_providers_fail() -> None:
+    first = FlakyVisionProvider(None, failures=1)
+    second = FlakyVisionProvider(None, failures=1)
+    chain = ChainFallbackProvider([first, second])
+
+    with pytest.raises(VisionProviderError):
+        chain.analyze(b"img", "describe")
+    assert first.calls == 1
+    assert second.calls == 1
+
+
+def test_chain_raises_on_empty_provider_list() -> None:
+    chain = ChainFallbackProvider([])
+
+    with pytest.raises(VisionProviderError):
+        chain.analyze(b"img", "describe")
