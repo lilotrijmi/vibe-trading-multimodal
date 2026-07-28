@@ -7,6 +7,7 @@ from src.multimodal.vision_provider import (
     GenflowAiVisionProvider,
     NoOpVisionProvider,
     OpenAICompatibleVisionProvider,
+    OllamaVisionProvider,
     VisionProvider,
     VisionResult,
 )
@@ -197,3 +198,27 @@ def test_GenflowAi_provider_raises_on_empty_text() -> None:
     )
     with pytest.raises(VisionProviderError):
         provider.analyze(b"bytes", "prompt")
+
+
+def test_ollama_provider_uses_ollama_api() -> None:
+    captured: dict = {}
+
+    class FakeClient:
+        def chat(self, **kwargs):
+            captured["kwargs"] = kwargs
+            return {"message": {"content": "local chart description"}}
+
+    provider = OllamaVisionProvider(
+        client=FakeClient(),  # type: ignore[arg-type]
+        model="llama3.2-vision",
+        host="http://localhost:11434",
+    )
+    result = provider.analyze(b"image-bytes", "describe")
+    assert result.description == "local chart description"
+    assert "llama3.2-vision" in captured["kwargs"]["model"]
+    messages = captured["kwargs"]["messages"]
+    assert messages[0]["role"] == "user"
+    assert messages[0]["content"] == "describe"
+    images = captured["kwargs"]["images"]
+    assert len(images) == 1
+    assert images[0].startswith("data:image/png;base64,")

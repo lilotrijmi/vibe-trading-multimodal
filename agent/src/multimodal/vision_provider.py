@@ -165,3 +165,37 @@ class GenflowAiVisionProvider(VisionProvider):
             raise VisionProviderError("provider returned empty content")
 
         return VisionResult(description=text, provider=self._model)
+
+
+class OllamaVisionProvider(VisionProvider):
+    """Vision provider for local Ollama API."""
+
+    def __init__(self, client: _ChatClient, model: str, host: str) -> None:
+        self._client = client
+        self._model = model
+        self._host = host
+
+    def analyze(self, image: bytes, prompt: str) -> VisionResult:
+        b64 = base64.b64encode(image).decode("ascii")
+        try:
+            response = self._client.chat(
+                model=f"{self._model}:latest",
+                messages=[{"role": "user", "content": prompt}],
+                images=[f"data:image/png;base64,{b64}"],
+            )
+        except Exception as exc:
+            raise VisionProviderError(
+                f"Ollama vision call failed: {exc}"
+            ) from exc
+
+        try:
+            content = response["message"]["content"]
+        except (KeyError, TypeError) as exc:
+            raise VisionProviderError(
+                f"unexpected response shape: {response!r}"
+            ) from exc
+
+        if not isinstance(content, str) or not content.strip():
+            raise VisionProviderError("provider returned empty content")
+
+        return VisionResult(description=content.strip(), provider=self._model)
