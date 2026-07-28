@@ -150,3 +150,57 @@ class URLFetcher:
             title=title,
             status=response.status_code,
         )
+
+
+@dataclass(frozen=True)
+class SanitizedContent:
+    """Sanitized URL content ready for LLM."""
+
+    text: str
+    source_url: str
+    was_truncated: bool
+
+
+class URLContentSanitizer:
+    """Sanitizes URL content before injecting into agent context."""
+
+    DELIMITER = "<<UNTRUSTED_URL_CONTENT>>"
+
+    def __init__(self, max_chars: int = 32_000) -> None:
+        self._max_chars = max_chars
+
+    def sanitize(self, text: str, source_url: str) -> SanitizedContent:
+        cleaned = text.replace(self.DELIMITER, "").replace("</UNTRUSTED_URL_CONTENT>", "")
+
+        try:
+            import bleach
+
+            cleaned = bleach.clean(
+                cleaned,
+                tags=[],
+                attributes={},
+                strip=True,
+                strip_comments=True,
+            )
+        except ImportError:
+            import re
+
+            cleaned = re.sub(r"<[^>]+>", "", cleaned)
+
+        was_truncated = False
+        if len(cleaned) > self._max_chars:
+            cleaned = cleaned[: self._max_chars]
+            was_truncated = True
+            cleaned += "\n\n[... (truncated) ...]"
+
+        wrapped = (
+            f"Source: {source_url}\n"
+            f"{'-' * 40}\n"
+            f"{cleaned}"
+        )
+
+        return SanitizedContent(
+            text=wrapped,
+            source_url=source_url,
+            was_truncated=was_truncated,
+        )
