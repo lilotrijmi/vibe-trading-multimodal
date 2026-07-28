@@ -5,9 +5,10 @@ from __future__ import annotations
 import ipaddress
 import socket
 from dataclasses import dataclass
+from typing import Any
 from urllib.parse import urlparse
 
-from src.multimodal.exceptions import URLSecurityError
+from src.multimodal.exceptions import URLFetchError, URLSecurityError
 
 
 _ALLOWED_SCHEMES = frozenset({"http", "https"})
@@ -68,4 +69,84 @@ class SSRFGuard:
             scheme=parsed.scheme.lower(),
             hostname=parsed.hostname,
             port=parsed.port,
+        )
+
+
+@dataclass(frozen=True)
+class FetchResult:
+    """Result of URL fetch."""
+
+    url: str
+    final_url: str
+    text: str
+    title: str
+    status: int
+
+
+class URLFetcher:
+    """Fetches URL content with safety limits."""
+
+    def __init__(
+        self,
+        guard: SSRFGuard,
+        http_client: Any,
+        max_bytes: int = 50_000_000,
+        timeout: float = 10.0,
+    ) -> None:
+        self._guard = guard
+        self._client = http_client
+        self._max_bytes = max_bytes
+        self._timeout = timeout
+
+    def fetch(self, url: str) -> FetchResult:
+        self._guard.validate(url)
+        try:
+            response = self._client.get(
+                url,
+                timeout=self._timeout,
+                follow_redirects=True,
+            )
+        except Exception as exc:
+            raise URLFetchError(f"fetch failed: {exc}") from exc
+
+        if response.status_code >= 400:
+            raise URLFetchError(
+                f"HTTP {response.status_code} for {url}"
+            )
+
+        ctype = response.headers.get("content-type", "").lower()
+        if "text/html" not in ctype and "text/plain" not in ctype and "application/xhtml" not in ctype:
+            raise URLFetchError(
+                f"unsupported content-type: {ctype!r}"
+            )
+
+        if len(response.content) > self._max_bytes:
+            raise URLFetchError(
+                f"content too large: {len(response.content)} bytes"
+            )
+
+        try:
+            import trafilatura
+
+            extracted = trafilatura.extract(
+                response.text,
+                include_comments=False,
+                include_tables=True,
+                favor_recall=True,
+            )
+            text = extracted or response.text
+            title = ""
+            metadata = trafilatura.extract_metadata(response.text)
+            if metadata and metadata.title:
+                title = metadata.title
+        except ImportError:
+            text = response.text
+            title = ""
+
+        return FetchResult(
+            url=url,
+            final_url=response.url,
+            text=text,
+            title=title,
+            status=response.status_code,
         )
