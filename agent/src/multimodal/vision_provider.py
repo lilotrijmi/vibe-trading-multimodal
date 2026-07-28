@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import base64
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from typing import Any, Protocol
 
 from src.multimodal.exceptions import VisionProviderError
 
@@ -63,3 +65,50 @@ class ChainFallbackProvider(VisionProvider):
                 continue
         assert last_error is not None  # loop ran at least once
         raise last_error
+
+
+class _ChatClient(Protocol):
+    def chat(self, **kwargs: Any) -> dict[str, Any]: ...
+
+
+class OpenAICompatibleVisionProvider(VisionProvider):
+    """Vision provider for OpenAI-compatible chat APIs."""
+
+    def __init__(self, client: _ChatClient, model: str) -> None:
+        self._client = client
+        self._model = model
+
+    def analyze(self, image: bytes, prompt: str) -> VisionResult:
+        b64 = base64.b64encode(image).decode("ascii")
+        try:
+            response = self._client.chat(
+                model=self._model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {"url": f"data:image/png;base64,{b64}"},
+                            },
+                        ],
+                    }
+                ],
+            )
+        except Exception as exc:
+            raise VisionProviderError(
+                f"OpenAI-compatible vision call failed: {exc}"
+            ) from exc
+
+        try:
+            content = response["choices"][0]["message"]["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise VisionProviderError(
+                f"unexpected response shape: {response!r}"
+            ) from exc
+
+        if not isinstance(content, str) or not content.strip():
+            raise VisionProviderError("provider returned empty content")
+
+        return VisionResult(description=content.strip(), provider=self._model)

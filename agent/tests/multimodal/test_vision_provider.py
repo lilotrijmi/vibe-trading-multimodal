@@ -3,10 +3,11 @@ from __future__ import annotations
 import pytest
 
 from src.multimodal.vision_provider import (
+    ChainFallbackProvider,
+    NoOpVisionProvider,
+    OpenAICompatibleVisionProvider,
     VisionProvider,
     VisionResult,
-    NoOpVisionProvider,
-    ChainFallbackProvider,
 )
 from src.multimodal.exceptions import VisionProviderError
 
@@ -100,3 +101,57 @@ def test_chain_fallback_raises_when_empty() -> None:
 
     with pytest.raises(VisionProviderError):
         chain.analyze(b"img", "describe")
+
+
+def test_openai_compatible_provider_sends_image_to_api() -> None:
+    captured: dict = {}
+
+    class FakeClient:
+        def chat(self, **kwargs):
+            captured["kwargs"] = kwargs
+            return {
+                "choices": [
+                    {"message": {"content": "uptrend, support at 90"}}
+                ]
+            }
+
+    client = FakeClient()
+    provider = OpenAICompatibleVisionProvider(
+        client=client,  # type: ignore[arg-type]
+        model="gpt-4o",
+    )
+    result = provider.analyze(b"fake-image-bytes", "describe this chart")
+    assert result.description == "uptrend, support at 90"
+    assert "gpt-4o" in captured["kwargs"]["model"]
+    user_msg = captured["kwargs"]["messages"][0]
+    assert user_msg["role"] == "user"
+    content = user_msg["content"]
+    assert isinstance(content, list)
+    image_block = next(b for b in content if b["type"] == "image_url")
+    assert image_block["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_openai_compatible_provider_raises_on_empty_response() -> None:
+    class FakeClient:
+        def chat(self, **kwargs):
+            return {"choices": [{"message": {"content": ""}}]}
+
+    provider = OpenAICompatibleVisionProvider(
+        client=FakeClient(),  # type: ignore[arg-type]
+        model="gpt-4o",
+    )
+    with pytest.raises(VisionProviderError):
+        provider.analyze(b"bytes", "prompt")
+
+
+def test_openai_compatible_provider_raises_on_error() -> None:
+    class FakeClient:
+        def chat(self, **kwargs):
+            raise RuntimeError("network failure")
+
+    provider = OpenAICompatibleVisionProvider(
+        client=FakeClient(),  # type: ignore[arg-type]
+        model="gpt-4o",
+    )
+    with pytest.raises(VisionProviderError):
+        provider.analyze(b"bytes", "prompt")
