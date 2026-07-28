@@ -59,7 +59,7 @@ class FlakyVisionProvider(VisionProvider):
         return VisionResult(description=self._response, provider="flaky")
 
 
-def test_chain_returns_first_provider_result() -> None:
+def test_chain_fallback_uses_first_provider() -> None:
     primary = FakeVisionProvider("primary-response")
     secondary = FakeVisionProvider("secondary-response")
     chain = ChainFallbackProvider([primary, secondary])
@@ -72,7 +72,7 @@ def test_chain_returns_first_provider_result() -> None:
     assert len(secondary.calls) == 0
 
 
-def test_chain_falls_back_when_primary_raises() -> None:
+def test_chain_fallback_falls_back_on_error() -> None:
     primary = FlakyVisionProvider("primary-response", failures=1)
     secondary = FakeVisionProvider("secondary-response")
     chain = ChainFallbackProvider([primary, secondary])
@@ -95,7 +95,7 @@ def test_chain_raises_when_all_providers_fail() -> None:
     assert second.calls == 1
 
 
-def test_chain_raises_on_empty_provider_list() -> None:
+def test_chain_fallback_raises_when_empty() -> None:
     chain = ChainFallbackProvider([])
 
     with pytest.raises(VisionProviderError):
