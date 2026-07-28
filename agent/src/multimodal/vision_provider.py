@@ -181,7 +181,7 @@ class OllamaVisionProvider(VisionProvider):
             response = self._client.chat(
                 model=f"{self._model}:latest",
                 messages=[{"role": "user", "content": prompt}],
-                images=[f"data:image/png;base64,{b64}"],
+                images=[b64],
             )
         except Exception as exc:
             raise VisionProviderError(

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+
 import pytest
 
 from src.multimodal.vision_provider import (
@@ -221,4 +223,5 @@ def test_ollama_provider_uses_ollama_api() -> None:
     assert messages[0]["content"] == "describe"
     images = captured["kwargs"]["images"]
     assert len(images) == 1
-    assert images[0].startswith("data:image/png;base64,")
+    # Ollama expects raw base64, no data URL prefix
+    assert images[0] == base64.b64encode(b"image-bytes").decode("ascii")
