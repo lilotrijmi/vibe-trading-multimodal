@@ -88,3 +88,30 @@ class RunResponse(BaseModel):
     )
     trade_markers: Optional[List[Dict[str, Any]]] = Field(None, description="Trade markers for charts")
     run_logs: Optional[List[Dict[str, Any]]] = Field(None, description="Structured stdout/stderr lines")
+
+
+class UploadResponse(BaseModel):
+    """Response for image upload."""
+
+    attachment_id: int
+    bytes_hash: str
+    mime: str
+    width: int
+    height: int
+    expires_at: str | None = None
+
+
+class ConversationSummary(BaseModel):
+    """Conversation summary."""
+
+    id: int
+    title: str
+    updated_at: str
+
+
+class FileResponse(BaseModel):
+    """File response metadata."""
+
+    attachment_id: int
+    mime: str
+    size_bytes: int

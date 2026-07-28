@@ -181,6 +181,10 @@ async def _stop_scheduled_research_on_shutdown() -> None:
 from src.api.runs_routes import register_runs_routes  # noqa: E402
 register_runs_routes(app)
 
+# --- Multimodal ---
+from src.api.multimodal_routes import router as _multimodal_router  # noqa: E402
+app.include_router(_multimodal_router)
+
 from src.api.runs_routes import (  # noqa: F401, E402
     _load_json_file,
     _load_csv_to_dict,
