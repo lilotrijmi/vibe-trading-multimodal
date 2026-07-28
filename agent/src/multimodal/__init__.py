@@ -1,0 +1,1 @@
+"""Multimodal adapter for Vibe-Trading."""
