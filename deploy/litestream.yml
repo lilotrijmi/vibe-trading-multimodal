@@ -1,0 +1,7 @@
+# Litestream config for SQLite backup to S3-compatible storage
+# Set LITESTREAM_S3_ACCESS_KEY_ID, LITESTREAM_S3_SECRET_ACCESS_KEY,
+# LITESTREAM_S3_BUCKET via environment variables.
+dbs:
+  - path: /var/lib/agent/vibe_trading.db
+    replicas:
+      - url: ${LITESTREAM_S3_BUCKET}

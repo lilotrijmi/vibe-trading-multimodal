@@ -1616,6 +1616,61 @@ MIT License — see [LICENSE](LICENSE)
   ⭐ If <b>Vibe-Trading</b> helps your research, a star helps more people find it.
 </p>
 
+## Multimodal Capabilities
+
+Vibe-Trading supports image and URL attachments in chat via the multimodal adapter.
+
+### Image Upload
+
+- Upload PNG, JPEG, WebP, or GIF (max 25MB)
+- The image is analyzed by a vision model (OpenAI, Anthropic, or local Ollama)
+- The trading agent receives a description and uses it for analysis
+
+### URL Attachment
+
+- Paste a URL (one per line) in the URL input
+- The agent fetches the content, extracts main text, and sanitizes it
+- The fetched content is treated as untrusted data, not as instructions
+
+### Security
+
+- URLs are validated against SSRF (private IPs blocked)
+- URL content is sanitized before reaching the LLM
+- Images are stored with 30-day retention
+- All endpoints require Bearer token auth
+
+### Configuration
+
+Set in `agent/.env`:
+
+```bash
+VISION_PROVIDER=openai  # or anthropic, ollama
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=...
+OLLAMA_BASE_URL=http://localhost:11434
+```
+
+### Architecture
+
+The multimodal adapter is implemented under `agent/src/multimodal/`:
+
+- `input_classifier.py` — detect file/url/path
+- `image_pipeline.py` — validate, resize, hash, dedupe
+- `url_reader.py` — safe fetch, extract, sanitize (with SSRF guard)
+- `vision_provider.py` — multi-provider (OpenAI/Anthropic/Ollama) + chain fallback
+- `context_packer.py` — pack text + image + url into agent context
+- `summarizer.py` — auto-summarize at 50 messages
+- `abuse_detector.py` — anomaly detection
+- `tools.py` — register `url_read` and `describe_image` for the agent
+
+API routes are in `agent/src/api/multimodal_routes.py` (mounted at `/api/multimodal`).
+
+### Deployment
+
+- Backend: Docker Compose (existing `vibe-trading` service binds 127.0.0.1:8899)
+- TLS: Caddy reverse proxy (config in `deploy/Caddyfile`)
+- Database backup: litestream to S3 (config in `deploy/litestream.yml`)
+
 ---
 
 <p align="center">
