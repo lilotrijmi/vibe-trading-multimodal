@@ -17,6 +17,7 @@ import { ToolProgressIndicator } from "@/components/chat/ToolProgressIndicator";
 import { MandateProposalCard } from "@/components/chat/MandateProposalCard";
 import { RunnerStatus } from "@/components/chat/RunnerStatus";
 import { SwarmStatusCard } from "@/components/chat/SwarmStatusCard";
+import { MultimodalAttachment } from "@/components/multimodal/MultimodalAttachment";
 import {
   applySwarmEvent,
   buildSwarmStatusFromStarted,
@@ -235,6 +236,9 @@ export function Agent() {
   const [showUploadMenu, setShowUploadMenu] = useState(false);
   const uploadMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [multimodalAttachment, setMultimodalAttachment] = useState<
+    { type: "image"; file: File; previewUrl: string } | { type: "url"; url: string } | null
+  >(null);
   const [swarmPreset, setSwarmPreset] = useState<{ name: string; title: string } | null>(null);
   const [goalComposerActive, setGoalComposerActive] = useState(false);
   const [goalDetailsOpen, setGoalDetailsOpen] = useState(false);
@@ -894,6 +898,44 @@ export function Agent() {
     if (attachment) {
       finalPrompt = `[Uploaded file: ${attachment.filename}, path: ${attachment.filePath}]\n\n${finalPrompt}`;
       setAttachment(null);
+    }
+
+    // Multimodal: image or URL — route to /api/multimodal/chat for vision+URL analysis
+    if (multimodalAttachment) {
+      const apiKey = localStorage.getItem("vibe_trading_api_key") ?? "";
+      const { sendMultimodalMessage } = await import("@/lib/multimodalApi");
+      setInput("");
+      const userContent = prompt;
+      act().addMessage({ id: "", type: "user", content: userContent, timestamp: Date.now() });
+      act().setStatus("streaming");
+      forceScrollToBottom();
+      inputRef.current?.focus();
+      try {
+        const sid = act().sessionId ?? (await api.createSession(userContent.slice(0, 50))).session_id;
+        if (!act().sessionId) {
+          act().setSessionId(sid);
+          setSearchParams({ session: sid }, { replace: true });
+        }
+        const res = await sendMultimodalMessage(
+          userContent,
+          multimodalAttachment.type === "url" ? [multimodalAttachment.url] : [],
+          multimodalAttachment.type === "image" ? multimodalAttachment.file : null,
+          apiKey,
+        );
+        act().addMessage({ id: "", type: "answer", content: res.response, timestamp: Date.now() });
+        act().setStatus("idle");
+        // revoke preview URL to free memory
+        if (multimodalAttachment.type === "image") {
+          URL.revokeObjectURL(multimodalAttachment.previewUrl);
+        }
+        setMultimodalAttachment(null);
+      } catch (error) {
+        act().setStatus("error");
+        const message = error instanceof Error ? error.message : t("agent.failedToSend");
+        toast.error(message);
+        act().addMessage({ id: "", type: "error", content: message, timestamp: Date.now() });
+      }
+      return;
     }
     setInput("");
     act().addMessage({ id: "", type: "user", content: finalPrompt, timestamp: Date.now() });
@@ -1595,6 +1637,18 @@ export function Agent() {
               accept=".pdf,.docx,.xlsx,.xls,.pptx,.csv,.tsv,.txt,.md,.log,.json,.yaml,.yml,.toml,.html,.xml,.rst,.png,.jpg,.jpeg,.gif,.bmp,.webp,.tiff"
               onChange={handleFileSelect}
               className="hidden"
+            />
+            {/* Multimodal attachment (image + URL) — visual + analysis pipeline */}
+            <MultimodalAttachment
+              onChange={(data) => {
+                if (data === null) {
+                  setMultimodalAttachment(null);
+                } else if (data.type === "image") {
+                  setMultimodalAttachment({ type: "image", file: data.file, previewUrl: data.previewUrl });
+                } else {
+                  setMultimodalAttachment({ type: "url", url: data.url });
+                }
+              }}
             />
             <textarea
               ref={inputRef}
