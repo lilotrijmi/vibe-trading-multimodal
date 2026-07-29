@@ -52,6 +52,12 @@ jobs:
         # the suite never silently switches state on env presence.
         run: pytest --ignore=agent/tests/e2e_backtest --ignore=agent/tests/test_e2e_harness_v2.py --cov=agent --cov-report=term-missing --cov-report=xml --tb=short -q
 
+      - name: Multimodal import smoke test
+        # Verifies all multimodal + DB modules + 3rd-party deps (sqlalchemy,
+        # Pillow, httpx, trafilatura, bleach) import after a clean install.
+        # Catches missing/dep-drift before image build.
+        run: pytest tools/test_multimodal_imports.py -q
+
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: "22"

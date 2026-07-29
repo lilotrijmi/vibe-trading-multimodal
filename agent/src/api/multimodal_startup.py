@@ -1,4 +1,9 @@
-"""Multimodal subsystem initialization."""
+"""Multimodal subsystem initialization.
+
+Bootstraps image pipeline, vision provider, URL reader, and SQLite DB at app
+startup. Reads config from env vars; degrades gracefully when optional
+dependencies (e.g. ``langchain-anthropic``) are missing.
+"""
 
 from __future__ import annotations
 
@@ -11,52 +16,32 @@ logger = logging.getLogger(__name__)
 
 
 def _build_vision_provider() -> Any:
-    """Build vision provider from env vars (multi-provider with fallback)."""
+    """Build vision provider from env vars (multi-provider with fallback).
+
+    Reads:
+      - ``VISION_PROVIDER``: openai | anthropic | ollama
+      - ``VISION_FALLBACK_PROVIDERS``: comma-separated fallback list
+      - ``VISION_MODEL``: model name (default per provider)
+      - ``OPENAI_API_KEY`` / ``ANTHROPIC_API_KEY`` / ``OLLAMA_BASE_URL``
+
+    Returns ``NoOpVisionProvider`` if no provider is configured. Wraps multiple
+    providers in ``ChainFallbackProvider`` for resilience.
+    """
     primary_name = os.environ.get("VISION_PROVIDER", "").lower()
     fallback_names = [
         n.strip().lower()
         for n in os.environ.get("VISION_FALLBACK_PROVIDERS", "").split(",")
         if n.strip()
     ]
-    providers = []
+    providers: list = []
 
     def _make(name: str) -> Any:
         if name in ("openai", "gpt-4o", "gpt-4-vision"):
-            try:
-                from langchain_openai import ChatOpenAI
-            except ImportError:
-                return None
-            return OpenAICompatibleVisionProvider(  # type: ignore[name-defined]
-                client=ChatOpenAI(
-                    model=os.environ.get("VISION_MODEL", "gpt-4o"),
-                    api_key=os.environ.get("OPENAI_API_KEY"),
-                ),
-                model=os.environ.get("VISION_MODEL", "gpt-4o"),
-            )
+            return _make_openai_provider()
         if name in ("anthropic", "claude"):
-            try:
-                from langchain_community.chat_models import ChatAnthropic  # type: ignore
-            except ImportError:
-                return None
-            return GenflowAiVisionProvider(  # type: ignore[name-defined]
-                client=ChatAnthropic(  # type: ignore[call-arg]
-                    model=os.environ.get("VISION_MODEL", "GenflowAi-3.5-GenflowAi"),
-                    anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
-                ),
-                model=os.environ.get("VISION_MODEL", "GenflowAi-3.5-GenflowAi"),
-            )
+            return _make_Anthropic_provider()
         if name == "ollama":
-            try:
-                import ollama  # type: ignore
-            except ImportError:
-                return None
-            return OllamaVisionProvider(  # type: ignore[name-defined]
-                client=ollama.Client(
-                    host=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
-                ),
-                model=os.environ.get("VISION_MODEL", "llama3.2-vision"),
-                host=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
-            )
+            return _make_ollama_provider()
         return None
 
     primary = _make(primary_name) if primary_name else None
@@ -67,14 +52,78 @@ def _build_vision_provider() -> Any:
         if p is not None:
             providers.append(p)
 
+    # Lazy import here to keep the module import cost low.
+    from src.multimodal.vision_provider import (
+        ChainFallbackProvider,
+        NoOpVisionProvider,
+    )
+
     if not providers:
-        return NoOpVisionProvider()  # type: ignore[name-defined]
+        logger.info("vision provider: NoOp (no VISION_PROVIDER configured)")
+        return NoOpVisionProvider()
     if len(providers) == 1:
         return providers[0]
-    return ChainFallbackProvider(providers)  # type: ignore[name-defined]
+    return ChainFallbackProvider(providers)
+
+
+def _make_openai_provider() -> Any:
+    """OpenAI-compatible vision via ChatOpenAI (also works with proxies)."""
+    from langchain_openai import ChatOpenAI
+
+    from src.multimodal.vision_provider import OpenAICompatibleVisionProvider
+
+    return OpenAICompatibleVisionProvider(
+        client=ChatOpenAI(
+            model=os.environ.get("VISION_MODEL", "gpt-4o"),
+            api_key=os.environ.get("OPENAI_API_KEY"),
+        ),
+        model=os.environ.get("VISION_MODEL", "gpt-4o"),
+    )
+
+
+def _make_Anthropic_provider() -> Any:
+    """Anthropic Messages API. Requires optional ``langchain-anthropic``."""
+    try:
+        from langchain_community.chat_models import ChatAnthropic  # type: ignore
+    except ImportError:
+        logger.warning(
+            "VISION_PROVIDER=anthropic but langchain-community is not installed; "
+            "install with: pip install langchain-community"
+        )
+        return None
+    from src.multimodal.vision_provider import GenflowAiVisionProvider
+
+    return GenflowAiVisionProvider(
+        client=ChatAnthropic(  # type: ignore[call-arg]
+            model=os.environ.get("VISION_MODEL", "GenflowAi-3.5-GenflowAi"),
+            anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY"),
+        ),
+        model=os.environ.get("VISION_MODEL", "GenflowAi-3.5-GenflowAi"),
+    )
+
+
+def _make_ollama_provider() -> Any:
+    """Ollama local server. Requires optional ``ollama`` Python client."""
+    try:
+        import ollama  # type: ignore
+    except ImportError:
+        logger.warning(
+            "VISION_PROVIDER=ollama but ollama package is not installed; "
+            "install with: pip install ollama"
+        )
+        return None
+    from src.multimodal.vision_provider import OllamaVisionProvider
+
+    host = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+    return OllamaVisionProvider(
+        client=ollama.Client(host=host),
+        model=os.environ.get("VISION_MODEL", "llama3.2-vision"),
+        host=host,
+    )
 
 
 def _build_http_client() -> Any:
+    """HTTP client for URL fetches."""
     import httpx
 
     return httpx.Client(
@@ -85,20 +134,16 @@ def _build_http_client() -> Any:
 
 
 def init_multimodal_subsystem() -> None:
-    """Initialize image pipeline, vision provider, URL reader, and DB."""
+    """Initialize image pipeline, vision provider, URL reader, and DB.
+
+    Called from ``api_server.py`` startup hook. Safe to call multiple times —
+    the most recent configuration wins.
+    """
     from src.api.multimodal_routes import configure as configure_routes
     from src.api.multimodal_routes import configure_integration
     from src.db.session import init_db
-    from src.multimodal.abuse_detector import AbuseDetector
     from src.multimodal.image_pipeline import ImagePipeline
     from src.multimodal.url_reader import SSRFGuard, URLContentSanitizer, URLFetcher
-    from src.multimodal.vision_provider import (
-        ChainFallbackProvider,
-        NoOpVisionProvider,
-        OpenAICompatibleVisionProvider,
-        GenflowAiVisionProvider,
-        OllamaVisionProvider,
-    )
 
     storage_dir = Path(
         os.environ.get("MULTIMODAL_STORAGE_DIR", "/app/agent/data/multimodal")
