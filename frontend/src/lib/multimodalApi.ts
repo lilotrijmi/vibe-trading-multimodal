@@ -2,6 +2,8 @@
  * Client-side API helpers for multimodal attachments.
  */
 
+import { getApiAuthKey } from "./apiAuth";
+
 export interface UploadResponse {
   attachment_id: number;
   bytes_hash: string;
@@ -16,15 +18,19 @@ export interface ChatResponse {
   response: string;
 }
 
+function resolveApiKey(apiKey?: string): string {
+  return apiKey ?? getApiAuthKey();
+}
+
 export async function uploadImage(
   file: File,
-  apiKey: string,
+  apiKey?: string,
 ): Promise<UploadResponse> {
   const form = new FormData();
   form.append("file", file);
   const response = await fetch("/api/multimodal/upload", {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: { Authorization: `Bearer ${resolveApiKey(apiKey)}` },
     body: form,
   });
   if (!response.ok) {
@@ -37,7 +43,7 @@ export async function sendMultimodalMessage(
   text: string,
   urls: string[],
   image: File | null,
-  apiKey: string,
+  apiKey?: string,
 ): Promise<ChatResponse> {
   const form = new FormData();
   form.append("text", text);
@@ -49,7 +55,7 @@ export async function sendMultimodalMessage(
   }
   const response = await fetch("/api/multimodal/chat", {
     method: "POST",
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: { Authorization: `Bearer ${resolveApiKey(apiKey)}` },
     body: form,
   });
   if (!response.ok) {

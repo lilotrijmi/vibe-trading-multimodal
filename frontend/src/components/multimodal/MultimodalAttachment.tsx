@@ -1,11 +1,13 @@
 import { useRef, useState } from "react";
 import { Image, Link2, X, Loader2 } from "lucide-react";
 import { uploadImage } from "@/lib/multimodalApi";
+import { getApiAuthKey } from "@/lib/apiAuth";
 
-const API_KEY_STORAGE = "vibe_trading_api_key";
+const API_KEY_STORAGE = "vibe_trading_api_auth_key";
 
 function getApiKey(): string {
-  return localStorage.getItem(API_KEY_STORAGE) ?? "";
+  // Prefer the standard auth key set via Settings; fall back to legacy key.
+  return getApiAuthKey() || localStorage.getItem(API_KEY_STORAGE) || "";
 }
 
 export type MultimodalAttachmentData =
