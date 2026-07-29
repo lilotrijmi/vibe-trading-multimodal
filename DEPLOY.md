@@ -283,3 +283,107 @@ Cek **Logs** tab. Umum:
 - Execute Command: `curl http://localhost:8899/live` → return JSON
 - Browser akses domain → tampil chat UI (bukan 502)
 
+
+---
+
+## Detailed Troubleshooting: Web UI tidak muncul
+
+### Gejala: Container running, `/live` return 200, tapi browser 502 / kosong
+
+**Verifikasi bertingkat**:
+
+#### 1. Cek di dalam container (Dokploy > Application > Execute Command)
+
+```bash
+# Test apakah FastAPI serve HTML chat UI
+curl -v http://127.0.0.1:8899/ 2>&1 | head -30
+```
+
+Kalau return HTML dengan `<title>Vibe Trading` atau mirip → FastAPI serving frontend dengan benar. Container OK.
+
+Kalau `Connection refused` → container tidak listen di 8899. Cek logs untuk error preflight.
+
+#### 2. Cek Caddy / reverse proxy Dokploy (bukan container)
+
+Di server VPS Dokploy (akses via SSH ke VPS, **bukan panel**):
+```bash
+# Lihat Caddy config untuk domain ini
+docker ps | grep caddy
+docker logs <caddy-container-id> 2>&1 | tail -30
+
+# Atau kalau Traefik:
+docker ps | grep traefik
+docker logs <traefik-container-id> 2>&1 | tail -30
+```
+
+Look for:
+- `502 Bad Gateway` → upstream not reachable
+- `connection refused` → port issue
+- `TLS handshake error` → cert issue
+
+#### 3. Cek port mapping di Dokploy panel
+
+**Application > Settings/Advanced**:
+- **Service Port**: 8899
+- **Container Port**: 8899
+- **Publish Port**: enabled
+
+Kalau port kosong atau salah, Dokploy Caddy tidak bisa proxy.
+
+#### 4. Cek DNS resolution
+
+Dari terminal lokal Anda:
+```bash
+nslookup trading.radiostreaming.my.id
+# atau
+dig trading.radiostreaming.my.id
+```
+
+Output harus resolve ke IP VPS Dokploy. Kalau ke IP lain, DNS salah.
+
+#### 5. Cek certificate HTTPS
+
+```bash
+# Cek cert valid
+curl -vI https://trading.radiostreaming.my.id 2>&1 | grep -i "subject\|issuer\|expire"
+
+# Test dari host
+curl -I https://trading.radiostreaming.my.id/live
+```
+
+#### 6. Cek Dokploy network
+
+Di VPS via SSH:
+```bash
+# Lihat network yang dipakai container
+docker network ls
+
+# Inspect network tempat vibe-trading-api container
+docker network inspect <network-name> | grep -A5 "vibe-trading"
+
+# Test dari container lain di network yang sama
+docker run --rm --network <network-name> alpine wget -qO- http://vibe-trading-api:8899/live
+```
+
+#### Common root causes
+
+| Symptom | Root cause | Fix |
+|---|---|---|
+| 502 Bad Gateway | Dokploy Caddy tidak reach container | Cek port mapping 8899 |
+| Connection refused | Container tidak listen | Cek logs, biasanya port atau HOST binding |
+| Empty response | Frontend tidak ter-build | `cd frontend && npm run build` di lokal, push |
+| Cert error | Let's Encrypt belum propagate | Tunggu 5 menit, refresh |
+| DNS not found | Domain belum point ke VPS | Update A record di DNS provider |
+| CORS error | Frontend beda origin | Set `CORS_ORIGINS` di env |
+
+#### Fallback test dari dalam container
+
+```bash
+# Tab Execute Command di Dokploy
+curl http://127.0.0.1:8899/
+curl http://127.0.0.1:8899/live
+curl http://127.0.0.1:8899/api/multimodal/chat -F "text=test"
+```
+
+Kalau ketiganya return sukses di dalam container tapi browser 502, masalah 100% di Dokploy Caddy/network/domain.
+
