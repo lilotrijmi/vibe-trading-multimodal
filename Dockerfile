@@ -109,6 +109,7 @@ RUN pip install --no-cache-dir \
 RUN useradd --create-home --shell /usr/sbin/nologin vibe \
     && useradd --system --no-create-home --shell /usr/sbin/nologin --uid 10001 vibe-sandbox \
     && mkdir -p agent/runs agent/sessions agent/uploads agent/.swarm/runs /home/vibe/.vibe-trading \
+        agent/data agent/data/multimodal \
     && chown -R vibe:vibe /app /home/vibe/.vibe-trading
 USER vibe
 
