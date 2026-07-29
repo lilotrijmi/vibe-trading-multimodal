@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,6 +19,32 @@ from src.multimodal.exceptions import InputValidationError
 from src.multimodal.image_pipeline import ImagePipeline
 from src.multimodal.url_reader import URLContentSanitizer
 from src.multimodal.vision_provider import VisionProvider
+
+logger = logging.getLogger(__name__)
+
+
+async def _call_llm_with_context(prompt: str) -> str:
+    """Call the agent's LLM (OpenAI-compatible) with the multimodal context.
+
+    Reads ``OPENAI_API_KEY`` / ``OPENAI_BASE_URL`` / ``LANGCHAIN_MODEL_NAME`` from
+    environment. Falls back to ``OPENROUTER_*`` if OpenAI key is absent. Any
+    failure raises so the caller can show a context-only fallback to the user.
+    """
+    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
+    base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get(
+        "OPENROUTER_BASE_URL", "https://api.openai.com/v1"
+    )
+    model = os.environ.get("LANGCHAIN_MODEL_NAME", "gpt-4o-mini")
+    if not api_key:
+        raise RuntimeError(
+            "no LLM API key configured (set OPENAI_API_KEY or OPENROUTER_API_KEY)"
+        )
+
+    from langchain_openai import ChatOpenAI
+
+    llm = ChatOpenAI(model=model, api_key=api_key, base_url=base_url, temperature=0.3)
+    response = await llm.ainvoke(prompt)
+    return response.content if hasattr(response, "content") else str(response)
 
 router = APIRouter(prefix="/api/multimodal", tags=["multimodal"])
 
@@ -204,7 +232,18 @@ async def chat(
     session.add(msg)
     session.flush()
 
-    response_text = f"[trading analysis] {ctx.full_prompt[:500]}"
+    # Call the agent's LLM with the packed multimodal context.
+    # Falls back to a context summary if the LLM call fails (e.g. provider
+    # misconfigured, network error, vision not supported by current model).
+    try:
+        response_text = await _call_llm_with_context(ctx.full_prompt)
+    except Exception as exc:
+        logger.warning("LLM call failed, returning context summary: %s", exc)
+        response_text = (
+            f"[trading analysis] (LLM unavailable: {exc})\n\n"
+            f"Vision/URL context:\n{ctx.full_prompt[:2000]}"
+        )
+
     assistant_msg = Message(conversation_id=conv.id, role="assistant", content=response_text)
     session.add(assistant_msg)
     session.commit()
