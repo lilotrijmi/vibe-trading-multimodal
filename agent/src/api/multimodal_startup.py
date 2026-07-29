@@ -145,12 +145,20 @@ def init_multimodal_subsystem() -> None:
     from src.multimodal.image_pipeline import ImagePipeline
     from src.multimodal.url_reader import SSRFGuard, URLContentSanitizer, URLFetcher
 
-    storage_dir = Path(
-        os.environ.get("MULTIMODAL_STORAGE_DIR", "/app/agent/data/multimodal")
+    storage_dir = _resolve_writable_path(
+        "MULTIMODAL_STORAGE_DIR",
+        fallback=Path("/app/agent/data/multimodal"),
     )
-    db_path = Path(
-        os.environ.get("VIBE_TRADING_DB_PATH", "/app/agent/data/vibe_trading.db")
-    )
+    db_path_str = os.environ.get("VIBE_TRADING_DB_PATH")
+    if db_path_str:
+        db_path = _resolve_writable_path_from(
+            Path(db_path_str).parent, filename=Path(db_path_str).name
+        )
+    else:
+        db_path = _resolve_writable_path(
+            "VIBE_TRADING_DB_PATH",
+            fallback=Path("/app/agent/data/vibe_trading.db"),
+        )
     init_db(db_path)
     configure_routes(pipeline=ImagePipeline(), storage_dir=storage_dir)
 
@@ -166,3 +174,50 @@ def init_multimodal_subsystem() -> None:
     sanitizer = URLContentSanitizer(max_chars=32_000)
     configure_integration(url_reader=fetcher, content_sanitizer=sanitizer)
     logger.info("multimodal subsystem initialized")
+
+
+def _is_writable_dir(path: Path) -> bool:
+    """Return True if ``path`` exists (or can be created) and is writable."""
+    try:
+        path.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return False
+    test_file = path / ".vibe_trading_writable_test"
+    try:
+        test_file.touch()
+        test_file.unlink()
+    except OSError:
+        return False
+    return True
+
+
+def _resolve_writable_path_from(parent: Path, filename: str) -> Path:
+    """Return a writable path under ``parent/filename``; fall back to /tmp."""
+    parent = Path(parent)
+    if _is_writable_dir(parent):
+        return parent / filename
+    fallback = Path("/tmp/vibe_trading")
+    logger.warning(
+        "db/storage dir %s is not writable; falling back to %s",
+        parent,
+        fallback,
+    )
+    fallback.mkdir(parents=True, exist_ok=True)
+    return fallback / filename
+
+
+def _resolve_writable_path(env_var: str, fallback: Path) -> Path:
+    """Resolve a path from env, falling back to /tmp if not writable."""
+    raw = os.environ.get(env_var)
+    candidate = Path(raw) if raw else fallback
+    if _is_writable_dir(candidate.parent):
+        return candidate
+    fb = Path("/tmp/vibe_trading") / candidate.name
+    logger.warning(
+        "%s=%s not writable; falling back to %s",
+        env_var,
+        candidate,
+        fb,
+    )
+    fb.parent.mkdir(parents=True, exist_ok=True)
+    return fb
