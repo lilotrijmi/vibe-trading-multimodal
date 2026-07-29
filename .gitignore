@@ -94,3 +94,4 @@ wiki/alpha-library/content/
 bench_report.json
 .pr-description.md
 .env.production
+.secrets/
