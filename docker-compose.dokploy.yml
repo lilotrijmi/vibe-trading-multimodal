@@ -1,0 +1,60 @@
+# Dokploy-ready docker-compose
+# Paste this into Dokploy's "Create Service → Docker Compose" panel,
+# or use the Git provider to point at this repo (Dokploy will auto-detect this file).
+services:
+  vibe-trading:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: vibe-trading-multimodal:latest
+    restart: unless-stopped
+    # Bind 127.0.0.1 only — Dokploy provides TLS termination at the edge.
+    # Use 0.0.0.0 if you want the container reachable directly (not recommended with Dokploy).
+    ports:
+      - "127.0.0.1:8899:8899"
+    env_file:
+      - agent/.env
+    environment:
+      - VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      # ==== Multimodal (image + URL) — added 2026-07-28 ====
+      - VISION_PROVIDER=${VISION_PROVIDER:-openai}
+      - VISION_MODEL=${VISION_MODEL:-gpt-4o}
+      - VISION_FALLBACK_PROVIDERS=${VISION_FALLBACK_PROVIDERS:-}
+      - MULTIMODAL_STORAGE_DIR=${MULTIMODAL_STORAGE_DIR:-/app/agent/data/multimodal}
+      - VIBE_TRADING_DB_PATH=${VIBE_TRADING_DB_PATH:-/app/agent/data/vibe_trading.db}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # Persist runs, sessions, user state, uploads, multimodal DB + files
+      - vibe-runs:/app/agent/runs
+      - vibe-sessions:/app/agent/sessions
+      - vibe-home:/home/vibe/.vibe-trading
+      - vibe-swarm-runs:/app/agent/.swarm/runs
+      - vibe-uploads:/app/agent/uploads
+      - vibe-multimodal:/app/agent/data/multimodal
+      - vibe-data:/app/agent/data
+      - ./agent/.env:/app/agent/.env
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8899/live') || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+    security_opt:
+      - no-new-privileges:false
+    read_only: false
+
+volumes:
+  vibe-runs:
+  vibe-sessions:
+  vibe-home:
+  vibe-swarm-runs:
+  vibe-uploads:
+  vibe-multimodal:
+  vibe-data:
