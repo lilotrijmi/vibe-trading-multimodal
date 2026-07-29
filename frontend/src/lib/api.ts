@@ -192,6 +192,12 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(settings),
     }),
+  getVisionSettings: () => request<VisionSettings>("/settings/vision"),
+  updateVisionSettings: (settings: UpdateVisionSettingsRequest) =>
+    request<VisionSettings>("/settings/vision", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    }),
   getChannelStatus: () => request<ChannelRuntimeStatus>("/channels/status"),
   startChannels: () => request<ChannelRuntimeActionResponse>("/channels/start", { method: "POST" }),
   stopChannels: () => request<ChannelRuntimeActionResponse>("/channels/stop", { method: "POST" }),
@@ -324,6 +330,27 @@ export interface UpdateLLMSettingsRequest {
   timeout_seconds: number;
   max_retries: number;
   reasoning_effort?: string;
+}
+
+export interface VisionSettings {
+  provider: string;
+  model_name: string;
+  base_url: string;
+  api_key_env?: string | null;
+  api_key_configured: boolean;
+  api_key_hint?: string | null;
+  enabled: boolean;
+  env_path: string;
+  providers: LLMProviderOption[];
+}
+
+export interface UpdateVisionSettingsRequest {
+  provider: string;
+  model_name: string;
+  base_url?: string;
+  api_key?: string;
+  clear_api_key?: boolean;
+  enabled: boolean;
 }
 
 export interface DataSourceSettings {

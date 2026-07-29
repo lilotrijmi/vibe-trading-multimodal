@@ -4,6 +4,7 @@ import { Database, KeyRound, Loader2, MessageSquareMore, Play, RefreshCw, Rotate
 import { useTranslation } from "react-i18next";
 import { toast } from "sonner";
 import { QVerisSettings } from "@/components/settings/QVerisSettings"; // QVERIS-INTEGRATION
+import { VisionSettingsSection } from "@/components/settings/VisionSettings";
 import { api, isAuthRequiredError, type ChannelRuntimeStatus, type DataSourceSettings, type LLMProviderOption, type LLMSettings } from "@/lib/api";
 import { getApiAuthKey, setApiAuthKey } from "@/lib/apiAuth";
 
@@ -664,6 +665,8 @@ export function Settings() {
             </div>
           </div>
         </div>
+
+        <VisionSettingsSection />
       </form>
     </div>
   );

@@ -92,6 +92,31 @@ class UpdateDataSourceSettingsRequest(BaseModel):
     clear_tushare_token: bool = False
 
 
+class VisionSettingsResponse(BaseModel):
+    """Current vision model settings for multimodal (image) attachments."""
+
+    provider: str
+    model_name: str
+    base_url: str
+    api_key_env: Optional[str] = None
+    api_key_configured: bool
+    api_key_hint: Optional[str] = None
+    enabled: bool
+    env_path: str
+    providers: List[LLMProviderOption]
+
+
+class UpdateVisionSettingsRequest(BaseModel):
+    """Update vision model settings persisted to agent/.env."""
+
+    provider: str = Field("openai", min_length=1)
+    model_name: str = Field("gpt-4o", min_length=1)
+    base_url: Optional[str] = None
+    api_key: Optional[str] = None
+    clear_api_key: bool = False
+    enabled: bool = True
+
+
 # ---------------------------------------------------------------------------
 # Provider metadata (settings-exclusive)
 # ---------------------------------------------------------------------------
@@ -247,6 +272,37 @@ def _build_data_source_settings_response(
         baostock_installed=installed,
         baostock_message=baostock_message,
         env_path=host._project_relative_path(host.ENV_PATH),
+    )
+
+
+def _build_vision_settings_response(
+    values: Optional[Dict[str, str]] = None,
+) -> VisionSettingsResponse:
+    """Build the public vision model settings payload."""
+    host = _host()
+    env_values = values if values is not None else _read_settings_env_values()
+    provider_name = (
+        env_values.get("VISION_PROVIDER", "openai").strip().lower() or "openai"
+    )
+    provider = LLM_PROVIDER_BY_NAME.get(provider_name, LLM_PROVIDER_BY_NAME["openai"])
+    api_key = env_values.get(provider.api_key_env or "", "") if provider.api_key_env else ""
+    api_key_configured = host._is_configured_secret(api_key, LLM_API_KEY_PLACEHOLDERS)
+    enabled = env_values.get("VISION_ENABLED", "true").strip().lower() not in (
+        "false",
+        "0",
+        "no",
+        "",
+    )
+    return VisionSettingsResponse(
+        provider=provider.name,
+        model_name=env_values.get("VISION_MODEL", provider.default_model),
+        base_url=env_values.get(provider.base_url_env, provider.default_base_url),
+        api_key_env=provider.api_key_env,
+        api_key_configured=api_key_configured,
+        api_key_hint=None,
+        enabled=enabled,
+        env_path=host._project_relative_path(host.ENV_PATH),
+        providers=LLM_PROVIDERS,
     )
 
 
@@ -468,3 +524,95 @@ def register_settings_routes(
         return _build_data_source_settings_response(
             saved_values if updates else _read_settings_env_values()
         )
+
+    @app.get(
+        "/settings/vision",
+        response_model=VisionSettingsResponse,
+        dependencies=[Depends(require_local_or_auth)],
+    )
+    async def get_vision_settings():
+        """Return vision model settings (for image attachments)."""
+        return _build_vision_settings_response()
+
+    @app.put(
+        "/settings/vision",
+        response_model=VisionSettingsResponse,
+        dependencies=[Depends(require_settings_write_auth)],
+    )
+    async def update_vision_settings(payload: UpdateVisionSettingsRequest):
+        """Persist vision model settings and update the running process."""
+        host_ref = _host()
+        provider_name = payload.provider.strip().lower()
+        provider = LLM_PROVIDER_BY_NAME.get(provider_name)
+        if provider is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Unsupported vision provider",
+            )
+
+        model_name = payload.model_name.strip()
+        if not model_name:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Vision model name is required",
+            )
+
+        base_url = (payload.base_url or provider.default_base_url).strip()
+        current_values = _read_settings_env_values()
+
+        updates: Dict[str, str] = {
+            "VISION_PROVIDER": provider.name,
+            "VISION_MODEL": model_name,
+            provider.base_url_env: base_url,
+            "VISION_ENABLED": "true" if payload.enabled else "false",
+        }
+
+        # Handle API key: provider-specific env var (e.g. OPENAI_API_KEY) so the
+        # vision client reuses the same credentials as the chat LLM.
+        if provider.api_key_env:
+            if payload.clear_api_key:
+                # Only clear if no LLM provider uses the same env var.
+                llm_provider = LLM_PROVIDER_BY_NAME.get(
+                    current_values.get("LANGCHAIN_PROVIDER", "openai").strip().lower()
+                )
+                if (
+                    not llm_provider
+                    or llm_provider.api_key_env != provider.api_key_env
+                ):
+                    updates[provider.api_key_env] = ""
+            elif payload.api_key is not None and payload.api_key.strip():
+                api_key = payload.api_key.strip()
+                updates[provider.api_key_env] = (
+                    api_key
+                    if host_ref._is_configured_secret(api_key, LLM_API_KEY_PLACEHOLDERS)
+                    else ""
+                )
+            elif provider.api_key_env in current_values and host_ref._is_configured_secret(
+                current_values[provider.api_key_env],
+                LLM_API_KEY_PLACEHOLDERS,
+            ):
+                updates[provider.api_key_env] = current_values[provider.api_key_env]
+
+        saved_values = _persist_settings_updates(updates)
+
+        # Sync to runtime env so vision provider rebuilds on next request.
+        for key, value in updates.items():
+            if value:
+                os.environ[key] = value
+            else:
+                os.environ.pop(key, None)
+        reset_env_config()
+
+        # Rebuild vision subsystem with new config.
+        try:
+            from src.api.multimodal_startup import init_multimodal_subsystem
+
+            init_multimodal_subsystem()
+        except Exception as exc:
+            # Don't fail the request — vision will fall back to stub.
+            import logging as _log
+            _log.getLogger(__name__).warning(
+                "failed to rebuild vision subsystem: %s", exc
+            )
+
+        return _build_vision_settings_response(saved_values)

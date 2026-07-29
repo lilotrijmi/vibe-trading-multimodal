@@ -57,6 +57,83 @@ async def _call_llm_with_context(prompt: str) -> str:
     response = await llm.ainvoke(prompt)
     return response.content if hasattr(response, "content") else str(response)
 
+
+def _get_active_vision_provider() -> Any:
+    """Return the vision provider, lazily rebuilt from runtime env.
+
+    Settings can change the VISION_* env vars without restarting the server;
+    this helper rebuilds the provider on each chat call so changes apply
+    immediately. Returns ``None`` if vision is disabled or unconfigured.
+    """
+    if os.environ.get("VISION_ENABLED", "true").lower() in ("false", "0", "no"):
+        return None
+    if not os.environ.get("OPENAI_API_KEY") and not os.environ.get("ANTHROPIC_API_KEY"):
+        return None
+
+    try:
+        from src.multimodal.vision_provider import (
+            NoOpVisionProvider,
+            OpenAICompatibleVisionProvider,
+            GenflowAiVisionProvider,
+            OllamaVisionProvider,
+        )
+        from langchain_openai import ChatOpenAI
+    except ImportError:
+        return None
+
+    vision_model = os.environ.get("VISION_MODEL", "gpt-4o")
+    base_url = (
+        os.environ.get("OPENAI_BASE_URL")
+        or os.environ.get("ANTHROPIC_BASE_URL")
+        or "https://api.openai.com/v1"
+    )
+    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+
+    # Auto-detect Genflow
+    if api_key and api_key.startswith("gf-") and not os.environ.get("OPENAI_BASE_URL"):
+        base_url = "https://v1.genflow.id/v1"
+
+    provider_name = os.environ.get("VISION_PROVIDER", "openai").lower()
+    if provider_name in ("openai", "gpt-4o", "gpt-4-vision"):
+        return OpenAICompatibleVisionProvider(
+            client=ChatOpenAI(model=vision_model, api_key=api_key, base_url=base_url),
+            model=vision_model,
+        )
+    if provider_name in ("anthropic", "claude"):
+        return GenflowAiVisionProvider(
+            client=_build_Anthropic_client(vision_model, api_key),
+            model=vision_model,
+        )
+    if provider_name == "ollama":
+        return OllamaVisionProvider(
+            client=_build_ollama_client(),
+            model=vision_model,
+            host=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
+        )
+    return NoOpVisionProvider()
+
+
+def _build_Anthropic_client(model: str, api_key: str) -> Any:
+    """Lazy Anthropic client builder. Returns None if package missing."""
+    try:
+        from langchain_community.chat_models import ChatAnthropic
+    except ImportError:
+        return None
+    return ChatAnthropic(
+        model=model,
+        anthropic_api_key=api_key,
+    )
+
+
+def _build_ollama_client() -> Any:
+    """Lazy Ollama client builder."""
+    try:
+        import ollama
+    except ImportError:
+        return None
+    return ollama.Client(host=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"))
+
+
 router = APIRouter(prefix="/api/multimodal", tags=["multimodal"])
 
 
@@ -184,20 +261,30 @@ async def chat(
             )
         except InputValidationError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        if _state.vision_provider is not None:
+        # Prefer the in-process provider set via configure_integration (used in
+        # tests + during startup). Fall back to a lazy provider built from the
+        # current env so Settings UI changes take effect without a restart.
+        state_vision = _state.vision_provider
+        is_noop = state_vision is not None and type(state_vision).__name__ == "NoOpVisionProvider"
+        env_vision = None if (state_vision and not is_noop) else _get_active_vision_provider()
+        vision = state_vision if state_vision and not is_noop else env_vision
+        if vision is not None:
             try:
-                vision_result = _state.vision_provider.analyze(
+                vision_result = vision.analyze(
                     img_result.persisted_bytes,
-                    "Describe this chart or image for trading analysis.",
+                    "Describe this chart or image for trading analysis. "
+                    "Include any visible numbers, indicators, support/resistance "
+                    "levels, and trend direction.",
                 )
                 image_descriptions.append(
                     AttachmentContext(
                         type="image",
                         source=image.filename or "uploaded.png",
-                        content=vision_result.description,
+                        content=vision_result.description or "(no description returned)",
                     )
                 )
             except Exception as exc:
+                logger.warning("vision provider failed: %s", exc)
                 image_descriptions.append(
                     AttachmentContext(
                         type="image",
@@ -246,6 +333,10 @@ async def chat(
     # Call the agent's LLM with the packed multimodal context.
     # Falls back to a context summary if the LLM call fails (e.g. provider
     # misconfigured, network error, vision not supported by current model).
+    response_text = (
+        f"[trading analysis] (no LLM configured)\n\n"
+        f"Vision/URL context:\n{ctx.full_prompt[:2000]}"
+    )
     try:
         response_text = await _call_llm_with_context(ctx.full_prompt)
     except Exception as exc:
@@ -255,7 +346,11 @@ async def chat(
             f"Vision/URL context:\n{ctx.full_prompt[:2000]}"
         )
 
-    assistant_msg = Message(conversation_id=conv.id, role="assistant", content=response_text)
+    assistant_msg = Message(
+        conversation_id=conv.id,
+        role="assistant",
+        content=response_text or "[empty response]",
+    )
     session.add(assistant_msg)
     session.commit()
 
