@@ -27,13 +27,24 @@ async def _call_llm_with_context(prompt: str) -> str:
     """Call the agent's LLM (OpenAI-compatible) with the multimodal context.
 
     Reads ``OPENAI_API_KEY`` / ``OPENAI_BASE_URL`` / ``LANGCHAIN_MODEL_NAME`` from
-    environment. Falls back to ``OPENROUTER_*`` if OpenAI key is absent. Any
-    failure raises so the caller can show a context-only fallback to the user.
+    environment. Falls back to ``OPENROUTER_*`` if OpenAI key is absent. Auto-
+    detects Genflow-style keys (``gf-`` prefix) and routes to the Genflow
+    endpoint when no ``OPENAI_BASE_URL`` is configured. Any failure raises so
+    the caller can show a context-only fallback to the user.
     """
     api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("OPENROUTER_API_KEY")
-    base_url = os.environ.get("OPENAI_BASE_URL") or os.environ.get(
-        "OPENROUTER_BASE_URL", "https://api.openai.com/v1"
+    base_url = (
+        os.environ.get("OPENAI_BASE_URL")
+        or os.environ.get("OPENROUTER_BASE_URL")
     )
+    # Auto-detect Genflow API key (starts with "gf-") and route to Genflow
+    # endpoint when no explicit base URL is set. This avoids the 401 that
+    # occurs when a Genflow key is sent to api.openai.com.
+    if not base_url and api_key and api_key.startswith("gf-"):
+        base_url = "https://v1.genflow.id/v1"
+    if not base_url:
+        base_url = "https://api.openai.com/v1"
+
     model = os.environ.get("LANGCHAIN_MODEL_NAME", "gpt-4o-mini")
     if not api_key:
         raise RuntimeError(
