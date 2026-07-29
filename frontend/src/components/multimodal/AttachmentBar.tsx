@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import { useState } from "react";
 
 export interface AttachmentBarProps {
   onSubmit: (text: string, urls: string[], image: File | null) => void;
