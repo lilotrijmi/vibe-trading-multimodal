@@ -19,12 +19,12 @@ Mode 1 lebih sederhana untuk update berkelanjutan. Mode 2 cocok untuk deploy sek
 
 ## Cara A: Git Provider (Recommended)
 
-### Step 1: Fork repository
+### Step 1: Repository
 
-1. Buka https://github.com/HKUDS/Vibe-Trading
-2. Klik **Fork** di kanan atas.
-3. Pilih akun Anda sebagai tujuan.
-4. Tunggu fork selesai (biasanya < 1 menit).
+Repository sudah disiapkan di `lilotrijmi/vibe-trading-multimodal` (public).
+- URL: https://github.com/lilotrijmi/vibe-trading-multimodal
+- Default branch: `main`
+- Branch dengan deployment artifacts: `feat/multimodal-adapter`
 
 ### Step 2: Buat GitHub Personal Access Token (untuk Dokploy)
 
@@ -45,8 +45,8 @@ Mode 1 lebih sederhana untuk update berkelanjutan. Mode 2 cocok untuk deploy sek
 | Field | Value |
 |---|---|
 | Provider | GitHub |
-| Repository | `YOUR_USERNAME/Vibe-Trading` (fork Anda) |
-| Branch | `feat/multimodal-adapter` |
+| Repository | `lilotrijmi/vibe-trading-multimodal` |
+| Branch | `main` (atau `feat/multimodal-adapter` untuk versi deploy) |
 | Build Path | `/Dockerfile` (root Dockerfile) |
 | Dockerfile Path | `Dockerfile` |
 
