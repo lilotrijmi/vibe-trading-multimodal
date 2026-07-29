@@ -93,6 +93,14 @@ COPY --from=frontend-build /app/frontend/dist frontend/dist
 RUN pip install --no-cache-dir --force-reinstall --no-deps "numpy<2.0" \
     && pip install --no-cache-dir "numpy<2.0"
 
+# Install multimodal dependencies that are not in the hash-pinned lock file.
+# These are added on top of the lock-resolved set and are required for
+# the image + URL adapter (see agent/src/multimodal/).
+RUN pip install --no-cache-dir \
+    "sqlalchemy>=2.0.0" \
+    "trafilatura>=2.0.0" \
+    "bleach>=6.0.0"
+
 # Runtime should not run as root. `vibe` owns the writable app-data dirs so
 # named volumes inherit usable permissions. `vibe-sandbox` is an unprivileged
 # system account (no home, no shell) that runner.py drops into via
