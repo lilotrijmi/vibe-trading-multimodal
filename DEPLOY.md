@@ -266,3 +266,20 @@ Cek **Logs** tab. Umum:
 - [ ] Logs ditinjau rutin untuk abuse detection alerts.
 - [ ] API key tidak pernah di-commit ke git.
 
+
+---
+
+## Common Issue: 502 Bad Gateway setelah deploy
+
+**Penyebab paling umum**: Port di Dokploy tidak di-set ke 8899. Default Dokploy 3000, tapi Vibe-Trading listen di 8899.
+
+**Fix**:
+1. Di aplikasi, tab **Settings** atau **Advanced**.
+2. Set **Service Port** = `8899` (atau **Port Mappings** → Container Port 8899).
+3. Redeploy.
+
+**Verifikasi**:
+- Logs tab harus menampilkan: `Uvicorn running on http://0.0.0.0:8899`
+- Execute Command: `curl http://localhost:8899/live` → return JSON
+- Browser akses domain → tampil chat UI (bukan 502)
+
