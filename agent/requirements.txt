@@ -66,5 +66,5 @@ weasyprint>=60.0
 
 # Multimodal (image + URL) — added 2026-07-28
 trafilatura>=2.0.0
-bleach>=6.0.0
+bleach>=6.4.0
 sqlalchemy>=2.0.0
