@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Image, Link2, X, Loader2 } from "lucide-react";
 import { uploadImage } from "@/lib/multimodalApi";
 import { getApiAuthKey } from "@/lib/apiAuth";
@@ -34,9 +34,21 @@ export function MultimodalAttachment({ apiKey, onChange }: MultimodalAttachmentP
 
   const key = apiKey ?? getApiKey();
 
-  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Listen for paste events from the parent chat input. The parent fires
+  // ``multimodal:paste-image`` with a File detail when the user pastes an
+  // image from the clipboard. We upload it just like a drag/drop file.
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ file: File }>).detail;
+      if (!detail?.file) return;
+      void handleImageFile(detail.file);
+    };
+    window.addEventListener("multimodal:paste-image", handler as EventListener);
+    return () => window.removeEventListener("multimodal:paste-image", handler as EventListener);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [key]);
+
+  const handleImageFile = async (file: File) => {
     setError(null);
     setLoading(true);
     try {
@@ -46,7 +58,7 @@ export function MultimodalAttachment({ apiKey, onChange }: MultimodalAttachmentP
         type: "image",
         file,
         previewUrl,
-        description: `Uploaded (id=${uploadRes.attachment_id}, ${uploadRes.width}x${uploadRes.height})`,
+        description: `Pasted (id=${uploadRes.attachment_id}, ${uploadRes.width}x${uploadRes.height})`,
       };
       setAttachment(data);
       onChange(data);
@@ -56,6 +68,12 @@ export function MultimodalAttachment({ apiKey, onChange }: MultimodalAttachmentP
       setLoading(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
+  };
+
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    void handleImageFile(file);
   };
 
   const handleAddUrl = () => {
