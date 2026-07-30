@@ -900,7 +900,10 @@ export function Agent() {
       setAttachment(null);
     }
 
-    // Multimodal: image or URL — route to /api/multimodal/chat for vision+URL analysis
+    // Multimodal: image or URL — process attachments (vision + URL fetch), then
+    // route the combined prompt through the regular agent service so the
+    // answer benefits from skills, tools, swarm presets, language detection,
+    // and other Vibe-Trading behavior.
     if (multimodalAttachment) {
       const apiKey = localStorage.getItem("vibe_trading_api_key") ?? "";
       const { sendMultimodalMessage } = await import("@/lib/multimodalApi");
@@ -911,20 +914,35 @@ export function Agent() {
       forceScrollToBottom();
       inputRef.current?.focus();
       try {
-        const sid = act().sessionId ?? (await api.createSession(userContent.slice(0, 50))).session_id;
-        if (!act().sessionId) {
-          act().setSessionId(sid);
-          setSearchParams({ session: sid }, { replace: true });
-        }
+        // Step 1: Get/process the multimodal payload (vision description +
+        // URL extracted text). This returns a single combined context string.
         const res = await sendMultimodalMessage(
           userContent,
           multimodalAttachment.type === "url" ? [multimodalAttachment.url] : [],
           multimodalAttachment.type === "image" ? multimodalAttachment.file : null,
           apiKey,
         );
-        act().addMessage({ id: "", type: "answer", content: res.response, timestamp: Date.now() });
-        act().setStatus("idle");
-        // revoke preview URL to free memory
+        const enrichedPrompt = res.prompt ?? userContent;
+
+        // Step 2: Ensure we have a session id.
+        let sid = act().sessionId;
+        if (!sid) {
+          const session = await api.createSession(userContent.slice(0, 50));
+          sid = session.session_id;
+          act().setSessionId(sid);
+          setSearchParams({ session: sid }, { replace: true });
+        }
+
+        // Step 3: Send the enriched prompt to the regular agent service.
+        // This runs the full Vibe-Trading agent loop (skills, tools, language
+        // detection) over SSE. The agent's streamed response is rendered by
+        // the existing SSE pipeline.
+        act().setStatus("streaming");
+        setupSSE(sid);
+        const sent = await api.sendMessage(sid, enrichedPrompt);
+        void syncCompletedAttempt(sid, sent.attempt_id);
+
+        // Cleanup multimodal state.
         if (multimodalAttachment.type === "image") {
           URL.revokeObjectURL(multimodalAttachment.previewUrl);
         }

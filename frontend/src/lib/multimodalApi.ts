@@ -15,7 +15,11 @@ export interface UploadResponse {
 
 export interface ChatResponse {
   message_id: number;
-  response: string;
+  conversation_id: number;
+  /** The packed multimodal prompt (text + image descriptions + URL content).
+   *  Feed this into the regular agent service (``/sessions/{id}/messages``)
+   *  so the answer benefits from skills, swarm, tools, and language detection. */
+  prompt: string;
 }
 
 function resolveApiKey(apiKey?: string): string {

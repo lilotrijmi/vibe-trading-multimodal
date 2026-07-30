@@ -43,7 +43,10 @@ def test_chat_endpoint_accepts_text_only(client: TestClient) -> None:
     assert response.status_code == 200
     body = response.json()
     assert "message_id" in body
-    assert "response" in body
+    assert "prompt" in body
+    # The packed prompt should contain the user's question for the agent loop
+    # to consume downstream.
+    assert "what is the trend on AAPL?" in body["prompt"]
 
 
 def test_chat_endpoint_accepts_url(client: TestClient) -> None:
@@ -87,4 +90,6 @@ def test_chat_endpoint_accepts_image(client: TestClient) -> None:
     )
     assert response.status_code == 200
     body = response.json()
-    assert "chart: uptrend" in body["response"]
+    # The packed prompt should embed the vision description so the regular
+    # agent service can answer with the full multimodal context.
+    assert "chart: uptrend" in body["prompt"]

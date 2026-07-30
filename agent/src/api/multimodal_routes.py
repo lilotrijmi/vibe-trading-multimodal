@@ -7,7 +7,7 @@ import os
 from dataclasses import dataclass
 from typing import Any
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 
@@ -253,8 +253,8 @@ async def upload_image(
 @router.post("/chat")
 async def chat(
     request: Request,
-    text: str = "",
-    urls: str = "",
+    text: str = Form(""),
+    urls: str = Form(""),
     image: UploadFile = File(None),
     session: Session = Depends(_db),
 ) -> dict[str, Any]:
@@ -354,32 +354,18 @@ async def chat(
         url_contents=url_contents,
     )
 
+    # Persist the original user message; the assistant response is generated
+    # downstream by the regular agent service (``/sessions/{id}/messages``)
+    # so the answer benefits from skills, swarm, tools, and language detection.
     msg = Message(conversation_id=conv.id, role="user", content=text)
     session.add(msg)
     session.flush()
-
-    # Call the agent's LLM with the packed multimodal context.
-    # Falls back to a context summary if the LLM call fails (e.g. provider
-    # misconfigured, network error, vision not supported by current model).
-    response_text = (
-        f"[trading analysis] (no LLM configured)\n\n"
-        f"Vision/URL context:\n{ctx.full_prompt[:2000]}"
-    )
-    try:
-        response_text = await _call_llm_with_context(ctx.full_prompt)
-    except Exception as exc:
-        logger.warning("LLM call failed, returning context summary: %s", exc)
-        response_text = (
-            f"[trading analysis] (LLM unavailable: {exc})\n\n"
-            f"Vision/URL context:\n{ctx.full_prompt[:2000]}"
-        )
-
-    assistant_msg = Message(
-        conversation_id=conv.id,
-        role="assistant",
-        content=response_text or "[empty response]",
-    )
-    session.add(assistant_msg)
     session.commit()
 
-    return {"message_id": msg.id, "response": response_text}
+    # Return the packed prompt — the frontend feeds this into the regular
+    # agent loop. No LLM call here.
+    return {
+        "message_id": msg.id,
+        "conversation_id": conv.id,
+        "prompt": ctx.full_prompt,
+    }
