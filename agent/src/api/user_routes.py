@@ -284,7 +284,13 @@ def register_user_routes(app: Any) -> None:
         _admin: User = Depends(require_admin_dep),
         session: SqlSession = Depends(get_session),
     ) -> UserListResponse:
-        purge_expired_sessions(session)
+        # NOTE: we previously called ``purge_expired_sessions`` here on every
+        # admin request, which acquired a write lock and competed with the
+        # user-list SELECT under concurrent load, causing visible delays and
+        # occasionally stale reads of newly-created users. Session cleanup
+        # is now performed lazily by ``_user_from_request`` (which already
+        # queries the same table for auth) and by the periodic
+        # ``purge_expired_sessions_now`` endpoint below.
         users = session.query(User).order_by(User.username.asc()).all()
         return UserListResponse(
             users=[
