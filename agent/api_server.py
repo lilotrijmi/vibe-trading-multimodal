@@ -169,6 +169,11 @@ async def _run_startup_preflight() -> None:
     from src.api.multimodal_startup import init_multimodal_subsystem
     init_multimodal_subsystem()
 
+    # Bootstrap multi-user auth (creates tables + initial admin).
+    from src.api.user_routes import init_auth
+    from src.db.session import get_session
+    init_auth(get_session)
+
 
 @app.on_event("shutdown")
 async def _stop_scheduled_research_on_shutdown() -> None:
@@ -214,6 +219,10 @@ from src.api.system_routes import _terminate_current_process  # noqa: F401, E402
 # --- Settings ---
 from src.api.settings_routes import register_settings_routes  # noqa: E402
 register_settings_routes(app)
+
+# --- Multi-user auth + per-user rate limit ---
+from src.api.user_routes import register_user_routes  # noqa: E402
+register_user_routes(app)
 
 from src.api.settings_routes import (  # noqa: F401, E402
     _baostock_supported,
