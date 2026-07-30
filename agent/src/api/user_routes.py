@@ -430,9 +430,21 @@ def register_user_routes(app: Any) -> None:
         lose user accounts. Use this to verify your Dokploy volume setup.
         """
         import os
+        from sqlalchemy import inspect as sa_inspect
         from src.db.auth_models import RateLimitEntry as RLE
+        from src.db.session import _engine as db_engine  # module-level
 
-        db_path_str = os.environ.get("VIBE_TRADING_DB_PATH", "/app/agent/data/vibe_trading.db")
+        # Use the actual engine URL (the path the application is *actually*
+        # using), not just the env var — the env may not have been read at
+        # the same time the engine was initialised.
+        engine_url = str(db_engine.url) if db_engine is not None else "(no engine)"
+        # Strip the SQLAlchemy driver prefix to get the file path.
+        db_path_str = engine_url.replace("sqlite:///", "").replace("sqlite://", "")
+        if not db_path_str or db_path_str == engine_url:
+            db_path_str = os.environ.get(
+                "VIBE_TRADING_DB_PATH", "/app/agent/data/vibe_trading.db"
+            )
+
         db_path = Path(db_path_str)
         db_exists = db_path.exists()
         db_size = db_path.stat().st_size if db_exists else 0
