@@ -129,6 +129,16 @@ class LLMConfig(_EnvBase):
     langchain_provider: str = Field(alias="LANGCHAIN_PROVIDER", default="openai")
     langchain_model_name: str = Field(alias="LANGCHAIN_MODEL_NAME", default="")
     langchain_temperature: float = Field(alias="LANGCHAIN_TEMPERATURE", default=0.0)
+    langchain_max_tokens: int | None = Field(
+        alias="LANGCHAIN_MAX_TOKENS",
+        default=8192,
+        gt=0,
+        description=(
+            "Max output tokens for the chat LLM. Defaults to 8192 which fits "
+            "trading analysis responses from most OpenAI-compatible gateways. "
+            "Increase if responses are truncated mid-sentence."
+        ),
+    )
     anthropic_max_tokens: int | None = Field(alias="ANTHROPIC_MAX_TOKENS", default=None, gt=0)
     timeout_seconds: int = Field(alias="TIMEOUT_SECONDS", default=120)
     max_retries: int = Field(alias="MAX_RETRIES", default=2)

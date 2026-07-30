@@ -870,6 +870,7 @@ def build_llm(*, model_name: Optional[str] = None, callbacks: Any = None) -> Any
         "temperature": temperature,
         "timeout": get_env_config().llm.timeout_seconds,
         "max_retries": get_env_config().llm.max_retries,
+        "max_tokens": get_env_config().llm.langchain_max_tokens,
         "callbacks": callbacks,
         "extra_body": (
             {"reasoning": {"effort": effort}}
