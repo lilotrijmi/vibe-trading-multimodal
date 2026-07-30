@@ -49,8 +49,31 @@ def init_db(db_path: Path) -> None:
     _engine = create_engine(
         f"sqlite:///{db_path}",
         future=True,
-        connect_args={"check_same_thread": False},
+        connect_args={
+            "check_same_thread": False,
+            # WAL mode allows concurrent readers with a single writer, and a
+            # busy-timeout prevents the "database is locked" error that
+            # otherwise fires when one request holds a write transaction
+            # while another tries to commit. These are critical for the
+            # multi-user web UI where auth and write endpoints race.
+            "timeout": 30,
+        },
     )
+
+    # Enable WAL on every new connection. SQLAlchemy reuses the same
+    # connection across requests so we use the connect event.
+    from sqlalchemy import event
+
+    @event.listens_for(_engine, "connect")
+    def _enable_sqlite_wal(dbapi_connection, _connection_record):
+        cursor = dbapi_connection.cursor()
+        try:
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA synchronous=NORMAL")
+            cursor.execute("PRAGMA busy_timeout=30000")
+        finally:
+            cursor.close()
+
     _SessionLocal = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
     Base.metadata.create_all(_engine)
 

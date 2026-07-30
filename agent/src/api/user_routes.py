@@ -137,7 +137,10 @@ def _user_from_request(request: Request, session: SqlSession) -> User | None:
     )
     if auth is None:
         return None
-    auth.last_seen_at = now
+    # NOTE: previously we also wrote ``auth.last_seen_at = now`` here, but that
+    # caused "database is locked" errors under concurrent load because every
+    # authenticated request became a write transaction. The field is still on
+    # the model (for future use) but we no longer touch it on the hot path.
     user = session.query(User).filter(User.id == auth.user_id, User.is_active == 1).first()
     return user
 
