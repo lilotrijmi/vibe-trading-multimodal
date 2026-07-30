@@ -9,6 +9,7 @@ from typing import Any
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from src.api.models import UploadResponse
@@ -18,6 +19,12 @@ from src.multimodal.context_packer import AttachmentContext, ContextPacker
 from src.multimodal.exceptions import InputValidationError
 from src.multimodal.image_pipeline import ImagePipeline
 from src.multimodal.url_reader import URLContentSanitizer
+from src.multimodal.exa import (
+    ExaClient,
+    ExaError,
+    format_contents_as_text,
+    format_search_results_as_text,
+)
 from src.multimodal.vision_provider import VisionProvider
 
 logger = logging.getLogger(__name__)
@@ -369,3 +376,136 @@ async def chat(
         "conversation_id": conv.id,
         "prompt": ctx.full_prompt,
     }
+
+
+# ---------------------------------------------------------------------------
+# Exa web search + content fetch
+# ---------------------------------------------------------------------------
+
+
+class ExaSearchRequest(BaseModel):
+    """Run a web search via Exa."""
+
+    query: str = Field(..., min_length=1, max_length=2000)
+    num_results: int = Field(5, ge=1, le=20)
+    include_domains: list[str] | None = None
+    api_key: str | None = None  # Optional override for the runtime API key
+
+
+class ExaSearchResponse(BaseModel):
+    """Search results + the rendered text block for LLM context."""
+
+    results: list[dict[str, Any]]
+    context: str  # Plain-text block ready to feed the LLM.
+
+
+class ExaContentsRequest(BaseModel):
+    """Fetch clean content of one or more URLs via Exa (anti-bot fallback)."""
+
+    urls: list[str] = Field(..., min_length=1, max_length=10)
+    summary: bool = False
+    api_key: str | None = None
+
+
+class ExaContentsResponse(BaseModel):
+    """Exa contents + the rendered text block."""
+
+    contents: list[dict[str, Any]]
+    context: str
+
+
+class ExaSettingsResponse(BaseModel):
+    """Current Exa configuration state for the Settings UI."""
+
+    api_key_configured: bool
+    api_key_hint: str | None = None
+    base_url: str
+    max_results: int
+    enabled: bool
+    env_path: str | None = None
+
+
+def _get_exa_client(api_key: str | None = None) -> ExaClient:
+    """Return an ExaClient honoring the API key override or runtime env."""
+    return ExaClient(api_key=api_key)
+
+
+@router.get("/exa/settings", response_model=ExaSettingsResponse)
+async def get_exa_settings() -> ExaSettingsResponse:
+    """Return Exa configuration for the Settings UI."""
+    client = _get_exa_client()
+    return ExaSettingsResponse(
+        api_key_configured=client.is_configured,
+        api_key_hint=None,
+        base_url=client._base_url,
+        max_results=client._max_results,
+        enabled=os.environ.get("EXA_ENABLED", "true").lower() not in ("false", "0", "no"),
+        env_path=None,
+    )
+
+
+@router.post("/exa/search", response_model=ExaSearchResponse)
+async def exa_search(payload: ExaSearchRequest) -> ExaSearchResponse:
+    """Run a web search via Exa and return results + LLM-ready context text."""
+    client = _get_exa_client(api_key=payload.api_key)
+    if not client.is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail="Exa is not configured. Set EXA_API_KEY in the environment or Settings.",
+        )
+    try:
+        results = await client.search(
+            payload.query,
+            num_results=payload.num_results,
+            include_domains=payload.include_domains,
+        )
+    except ExaError as exc:
+        raise HTTPException(status_code=502, detail=f"Exa error: {exc}") from exc
+
+    results_dicts = [
+        {
+            "title": r.title,
+            "url": r.url,
+            "snippet": r.snippet,
+            "published_date": r.published_date,
+            "author": r.author,
+            "score": r.score,
+        }
+        for r in results
+    ]
+    return ExaSearchResponse(
+        results=results_dicts,
+        context=format_search_results_as_text(results),
+    )
+
+
+@router.post("/exa/contents", response_model=ExaContentsResponse)
+async def exa_contents(payload: ExaContentsRequest) -> ExaContentsResponse:
+    """Fetch clean markdown content of one or more URLs via Exa (anti-bot fallback)."""
+    client = _get_exa_client(api_key=payload.api_key)
+    if not client.is_configured:
+        raise HTTPException(
+            status_code=503,
+            detail="Exa is not configured. Set EXA_API_KEY in the environment or Settings.",
+        )
+    try:
+        contents = await client.get_contents(
+            payload.urls,
+            summary=payload.summary,
+        )
+    except ExaError as exc:
+        raise HTTPException(status_code=502, detail=f"Exa error: {exc}") from exc
+
+    contents_dicts = [
+        {
+            "url": c.url,
+            "title": c.title,
+            "text": c.text,
+            "summary": c.summary,
+        }
+        for c in contents
+    ]
+    return ExaContentsResponse(
+        contents=contents_dicts,
+        context=format_contents_as_text(contents),
+    )
