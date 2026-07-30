@@ -1221,8 +1221,8 @@ export function Agent() {
 
   return (
     <div className="flex flex-col flex-1 min-w-0 overflow-hidden h-full">
-      <div ref={listRef} className="flex-1 overflow-auto p-6 scroll-smooth relative">
-        <div className="max-w-3xl mx-auto space-y-4">
+      <div ref={listRef} className="flex-1 overflow-auto p-3 sm:p-4 md:p-6 scroll-smooth relative">
+        <div className="max-w-3xl mx-auto space-y-3 sm:space-y-4">
           {sessionLoading && (
             <div className="space-y-4 py-4">
               {[1, 2, 3].map(i => (
@@ -1332,7 +1332,7 @@ export function Agent() {
         <ConversationTimeline messages={messages} containerRef={listRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="border-t p-4 bg-background/80 backdrop-blur-sm">
+      <form onSubmit={handleSubmit} className="border-t p-2.5 sm:p-3 md:p-4 bg-background/80 backdrop-blur-sm">
         <div className="max-w-3xl mx-auto space-y-2">
           {/* Swarm preset badge */}
           {swarmPreset && (
@@ -1574,7 +1574,7 @@ export function Agent() {
               )}
             </div>
           )}
-          <div className="flex gap-2 items-end">
+          <div className="flex gap-1.5 sm:gap-2 items-end">
             {/* "+" menu: PDF upload + Swarm presets */}
             <div className="relative" ref={uploadMenuRef}>
               <button
@@ -1765,7 +1765,7 @@ export function Agent() {
                   : t("agent.placeholder")
               }
               aria-label={t("agent.messageInputLabel")}
-              className="flex-1 px-4 py-2.5 rounded-xl border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 transition-shadow resize-none max-h-32 overflow-y-auto"
+              className="flex-1 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 transition-shadow resize-none max-h-32 overflow-y-auto min-w-0"
               disabled={status === "streaming"}
             />
             {messages.length > 0 && (

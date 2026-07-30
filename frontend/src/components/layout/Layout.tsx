@@ -1,7 +1,7 @@
 import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router";
-import { Activity, BarChart3, Bot, Check, ChevronDown, FileText, Languages, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2 } from "lucide-react";
+import { Activity, BarChart3, Bot, Check, ChevronDown, FileText, Languages, Menu, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { api, type SessionItem } from "@/lib/api";
@@ -73,19 +73,49 @@ export function Layout() {
     setRenameTarget(null);
   };
 
+  // Mobile drawer state (separate from desktop collapse).
+  const [mobileOpen, setMobileOpen] = useState(false);
+  // Close drawer when navigating.
+  useEffect(() => { setMobileOpen(false); }, [pathname]);
+
   return (
-    <div className="flex h-screen bg-background rtl:flex-row-reverse">
+    <div className="flex h-screen bg-background rtl:flex-row-reverse relative">
+      {/* Mobile backdrop */}
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-30 bg-black/50 md:hidden"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className={cn(
-        "border-e bg-card flex flex-col shrink-0 transition-all duration-200 overflow-visible",
-        collapsed ? "w-12" : "w-64"
-      )}>
+      <aside
+        className={cn(
+          // Mobile: drawer sliding in from the left
+          "fixed inset-y-0 start-0 z-40 bg-card border-e flex flex-col shrink-0 transition-transform duration-200",
+          // Desktop: static in flex flow
+          "md:relative md:inset-auto md:start-auto md:z-auto md:translate-x-0",
+          mobileOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
+          // Width: full on mobile when open, narrow when collapsed desktop, wide otherwise
+          "w-64",
+          collapsed && "md:w-12",
+        )}>
         {/* Brand */}
-        <div className={cn("border-b", collapsed ? "p-2 flex justify-center" : "p-4")}>
+        <div className={cn("border-b flex items-center", collapsed ? "p-2 justify-center" : "p-4 justify-between")}>
           <Link to="/" className={cn("flex items-center font-bold text-base tracking-tight", collapsed ? "justify-center" : "gap-2")}>
             <BarChart3 className="h-5 w-5 text-primary shrink-0" />
             {!collapsed && "Vibe-Trading"}
           </Link>
+          {/* Mobile-only close button */}
+          <button
+            type="button"
+            onClick={() => setMobileOpen(false)}
+            className="md:hidden inline-flex items-center justify-center h-8 w-8 rounded-md hover:bg-muted"
+            aria-label="Close navigation menu"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
         {/* Nav */}
@@ -252,8 +282,23 @@ export function Layout() {
       </aside>
 
       {/* Main */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden min-w-0">
         <ConnectionBanner status={sseStatus} retryAttempt={sseRetryAttempt} />
+        {/* Mobile-only top bar with hamburger. Visible below the
+            ``md`` breakpoint; hidden on desktop where the sidebar is
+            permanently docked. */}
+        <div className="md:hidden flex items-center gap-2 border-b bg-card/60 backdrop-blur-sm px-3 py-2">
+          <button
+            type="button"
+            onClick={() => setMobileOpen(true)}
+            className="inline-flex items-center justify-center h-9 w-9 rounded-md border bg-background hover:bg-muted transition-colors"
+            aria-label="Open navigation menu"
+            data-testid="mobile-menu-button"
+          >
+            <Menu className="h-5 w-5" />
+          </button>
+          <span className="text-sm font-semibold tracking-tight">Vibe-Trading</span>
+        </div>
         <main className="flex-1 overflow-auto">
           <Outlet />
         </main>
