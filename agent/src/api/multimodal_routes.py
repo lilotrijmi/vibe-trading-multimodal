@@ -351,8 +351,13 @@ async def chat(
             exa = _get_exa_client()
             if exa.is_configured:
                 logger.info("fetching %s via Exa (primary)", url)
+                # Pass the bound method + args (not the awaited coroutine) to
+                # ``_async_runner_with_loop`` so it can re-construct the coroutine
+                # on its own event loop. Calling the async method here would
+                # return a coroutine object, which would then fail with
+                # "'coroutine' object is not callable".
                 exa_results = _async_runner_with_loop(
-                    exa.get_contents([url], summary=True)
+                    exa.get_contents, [url], summary=True
                 )
                 if exa_results:
                     content_text = format_contents_as_text(exa_results)
