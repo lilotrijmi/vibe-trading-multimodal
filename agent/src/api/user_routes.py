@@ -305,6 +305,8 @@ def register_user_routes(app: Any) -> None:
         _admin: User = Depends(require_admin_dep),
         session: SqlSession = Depends(get_session),
     ) -> CurrentUserResponse:
+        from sqlalchemy.exc import IntegrityError
+
         existing = session.query(User).filter(User.username == payload.username).one_or_none()
         if existing is not None:
             raise HTTPException(status_code=409, detail="username already exists")
@@ -316,7 +318,14 @@ def register_user_routes(app: Any) -> None:
             note=payload.note,
         )
         session.add(user)
-        session.commit()
+        try:
+            session.commit()
+        except IntegrityError:
+            # Race-condition fallback: another request created the same
+            # username between our SELECT and our INSERT. Return 409 cleanly
+            # instead of leaking a 500.
+            session.rollback()
+            raise HTTPException(status_code=409, detail="username already exists")
         session.refresh(user)
         return CurrentUserResponse(
             id=user.id,
