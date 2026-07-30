@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Image, Link2, X, Loader2 } from "lucide-react";
+import { Link2, X } from "lucide-react";
 import { uploadImage } from "@/lib/multimodalApi";
 import { getApiAuthKey } from "@/lib/apiAuth";
 
@@ -47,6 +47,21 @@ export function MultimodalAttachment({ apiKey, onChange }: MultimodalAttachmentP
     return () => window.removeEventListener("multimodal:paste-image", handler as EventListener);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
+
+  // FAB-menu trigger: the parent (Agent.tsx) dispatches these events when
+  // the user clicks the "Image" or "URL" items in the + menu. We react
+  // here so the trigger can live in the FAB while the actual state +
+  // upload logic stays local to this component.
+  useEffect(() => {
+    const onOpenImage = () => fileInputRef.current?.click();
+    const onShowUrl = () => setShowUrlInput(true);
+    window.addEventListener("multimodal:open-image", onOpenImage as EventListener);
+    window.addEventListener("multimodal:show-url", onShowUrl as EventListener);
+    return () => {
+      window.removeEventListener("multimodal:open-image", onOpenImage as EventListener);
+      window.removeEventListener("multimodal:show-url", onShowUrl as EventListener);
+    };
+  }, []);
 
   const handleImageFile = async (file: File) => {
     setError(null);
@@ -137,38 +152,38 @@ export function MultimodalAttachment({ apiKey, onChange }: MultimodalAttachmentP
         </div>
       )}
 
-      <div className="flex items-center gap-1">
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif"
-          onChange={handleImageSelect}
-          className="hidden"
-          data-testid="multimodal-image-input"
-          disabled={loading}
+      {/* Hidden file input — exposed to the parent via the global
+          ``multimodal:open-image`` event so the Image action can live in
+          the FAB menu (not the chat-input sidebar). */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/png,image/jpeg,image/webp,image/gif"
+        onChange={handleImageSelect}
+        className="hidden"
+        data-testid="multimodal-image-input"
+        disabled={loading}
+      />
+
+      {/* Programmatic triggers: the parent FAB menu dispatches these
+          custom events; we react here to keep the trigger surface inside
+          the FAB while the actual upload + state still lives in this
+          component. */}
+      <div className="hidden">
+        <button
+          type="button"
+          data-testid="multimodal-image-button"
+          aria-hidden="true"
+          tabIndex={-1}
+          onClick={() => fileInputRef.current?.click()}
         />
         <button
           type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={loading || attachment !== null}
-          className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
-          title="Upload image (PNG/JPEG/WebP/GIF, max 25MB)"
-          data-testid="multimodal-image-button"
-        >
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Image className="h-3.5 w-3.5" />}
-          Image
-        </button>
-        <button
-          type="button"
-          onClick={() => setShowUrlInput((s) => !s)}
-          disabled={attachment !== null}
-          className="inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-40"
-          title="Attach URL to fetch and analyze"
           data-testid="multimodal-url-button"
-        >
-          <Link2 className="h-3.5 w-3.5" />
-          URL
-        </button>
+          aria-hidden="true"
+          tabIndex={-1}
+          onClick={() => setShowUrlInput((s) => !s)}
+        />
       </div>
 
       {showUrlInput && (

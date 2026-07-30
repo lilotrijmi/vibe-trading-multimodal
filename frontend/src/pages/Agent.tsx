@@ -1,7 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import { useEffect, useRef, useState, useMemo, useCallback, type FormEvent } from "react";
 import { useSearchParams } from "react-router";
-import { Send, Loader2, ArrowDown, Square, Download, Plus, Paperclip, X, Users, Target, ChevronDown, Pencil, Check, Play, OctagonX, Activity, Ban, CheckCircle2, Landmark } from "lucide-react";
+import { Send, Loader2, ArrowDown, Square, Download, Plus, Paperclip, X, Users, Target, ChevronDown, Pencil, Check, Play, OctagonX, Activity, Ban, CheckCircle2, Landmark, Image, Link2 } from "lucide-react";
 import { toast } from "sonner";
 import { useAgentStore } from "@/stores/agent";
 import { useSSE } from "@/hooks/useSSE";
@@ -1587,7 +1587,32 @@ export function Agent() {
                 <Plus className="h-4 w-4" />
               </button>
               {showUploadMenu && (
-                <div className="absolute bottom-full left-0 mb-2 w-52 rounded-xl border bg-background/95 backdrop-blur-sm shadow-lg py-1 z-50">
+                <div className="absolute bottom-full left-0 mb-2 w-56 rounded-xl border bg-background/95 backdrop-blur-sm shadow-lg py-1 z-50">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUploadMenu(false);
+                      window.dispatchEvent(new CustomEvent("multimodal:open-image"));
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
+                    data-testid="fab-image"
+                  >
+                    <Image className="h-4 w-4" />
+                    {t("agent.attachImage", "Image")}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowUploadMenu(false);
+                      window.dispatchEvent(new CustomEvent("multimodal:show-url"));
+                    }}
+                    className="w-full px-3 py-2 text-left text-sm hover:bg-muted transition-colors flex items-center gap-2"
+                    data-testid="fab-url"
+                  >
+                    <Link2 className="h-4 w-4" />
+                    {t("agent.attachUrl", "URL")}
+                  </button>
+                  <div className="border-t my-1" />
                   <button
                     type="button"
                     onClick={() => { fileInputRef.current?.click(); setShowUploadMenu(false); }}
