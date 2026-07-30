@@ -108,6 +108,7 @@ class StorageInfoResponse(BaseModel):
     rate_limit_log_count: int
     multimodal_storage_dir: str
     multimodal_storage_exists: bool
+    engine_url: str
     is_persistent: bool
     note: str
 
@@ -479,6 +480,7 @@ def register_user_routes(app: Any) -> None:
             rate_limit_log_count=int(session.query(RLE).count()),
             multimodal_storage_dir=str(mm_dir),
             multimodal_storage_exists=mm_exists,
+            engine_url=engine_url,
             is_persistent=is_persistent,
             note=(
                 "If is_persistent is False, mount a Dokploy volume at the parent "
