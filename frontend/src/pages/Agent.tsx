@@ -1332,7 +1332,10 @@ export function Agent() {
         <ConversationTimeline messages={messages} containerRef={listRef} />
       </div>
 
-      <form onSubmit={handleSubmit} className="border-t p-2.5 sm:p-3 md:p-4 bg-background/80 backdrop-blur-sm">
+      <form
+        onSubmit={handleSubmit}
+        className="border-t bg-background/80 backdrop-blur-sm px-2 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] sm:px-4 sm:pt-3 md:px-4 md:pt-4"
+      >
         <div className="max-w-3xl mx-auto space-y-2">
           {/* Swarm preset badge */}
           {swarmPreset && (
@@ -1574,20 +1577,25 @@ export function Agent() {
               )}
             </div>
           )}
-          <div className="flex gap-1.5 sm:gap-2 items-end">
+          {/* ChatGPT/Gemini-style chat composer: one rounded container holding
+              the attachment FAB + textarea + send/stop button. Export lives
+              outside the composer so it doesn't crowd the row on mobile. */}
+          <div className="flex gap-1.5 sm:gap-2 items-stretch">
+            <div className="flex-1 min-w-0 flex items-end gap-1.5 sm:gap-2 rounded-2xl border bg-muted/30 dark:bg-muted/20 shadow-sm focus-within:ring-2 focus-within:ring-primary/30 transition-shadow p-1.5 sm:p-2">
             {/* "+" menu: PDF upload + Swarm presets */}
-            <div className="relative" ref={uploadMenuRef}>
+            <div className="relative shrink-0" ref={uploadMenuRef}>
               <button
                 type="button"
                 onClick={() => setShowUploadMenu(prev => !prev)}
                 disabled={status === "streaming" || uploading}
-                className="w-9 h-9 rounded-full border flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40 shrink-0"
+                className="w-9 h-9 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40"
                 title={t("agent.moreOptions")}
+                aria-label={t("agent.moreOptions")}
               >
                 <Plus className="h-4 w-4" />
               </button>
               {showUploadMenu && (
-                <div className="absolute bottom-full left-0 mb-2 w-56 rounded-xl border bg-background/95 backdrop-blur-sm shadow-lg py-1 z-50">
+                <div className="absolute bottom-full left-0 mb-2 w-64 max-w-[calc(100vw-2rem)] rounded-xl border bg-background/95 backdrop-blur-sm shadow-lg py-1 z-50">
                   <button
                     type="button"
                     onClick={() => {
@@ -1767,7 +1775,7 @@ export function Agent() {
               onInput={(e) => {
                 const el = e.target as HTMLTextAreaElement;
                 el.style.height = "auto";
-                el.style.height = el.scrollHeight + "px";
+                el.style.height = Math.min(el.scrollHeight, 160) + "px";
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter" && !e.shiftKey) {
@@ -1790,37 +1798,49 @@ export function Agent() {
                   : t("agent.placeholder")
               }
               aria-label={t("agent.messageInputLabel")}
-              className="flex-1 px-3 sm:px-4 py-2 sm:py-2.5 rounded-xl border bg-background text-sm focus:outline-none focus:ring-2 focus:ring-primary/40 transition-shadow resize-none max-h-32 overflow-y-auto min-w-0"
+              className="flex-1 min-w-0 bg-transparent px-2 sm:px-3 py-2 sm:py-2.5 text-sm focus:outline-none resize-none max-h-40 min-h-[36px] leading-relaxed"
               disabled={status === "streaming"}
             />
-            {messages.length > 0 && (
-              <button
-                type="button"
-                onClick={handleExport}
-                className="px-3 py-2.5 rounded-xl border text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-                title={t('agent.exportChat')}
-              >
-                <Download className="h-4 w-4" />
-              </button>
-            )}
             {status === "streaming" ? (
               <button
                 type="button"
                 onClick={handleCancel}
-                className="px-4 py-2.5 rounded-xl bg-destructive text-destructive-foreground text-sm font-medium hover:opacity-90 transition-opacity"
+                className="shrink-0 w-9 h-9 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:opacity-90 transition-opacity"
                 title={t('agent.stopGeneration')}
+                aria-label={t('agent.stopGeneration')}
               >
                 <Square className="h-4 w-4" />
               </button>
             ) : (
               <button
                 type="submit"
-                disabled={goalComposerActive ? !input.trim() : (!input.trim() && !attachment)}
-                className="px-4 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium disabled:opacity-40 hover:opacity-90 transition-opacity"
+                disabled={goalComposerActive ? !input.trim() : (!input.trim() && !attachment && !multimodalAttachment)}
+                className="shrink-0 w-9 h-9 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 rounded-full bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-40 hover:opacity-90 transition-opacity"
                 title={t("agent.send")}
                 aria-label={t("agent.send")}
               >
                 <Send className="h-4 w-4" />
+              </button>
+            )}
+            </div>
+          </div>
+          {/* Secondary toolbar row: multimodal chip (when present) + export */}
+          <div className="flex items-center justify-between gap-2 px-1">
+            <div className="flex-1 min-w-0">
+              {/* The MultimodalAttachment chip (image/url preview) lives outside
+                  the chat composer so it floats above the input on mobile and
+                  doesn't shift the Send button. */}
+            </div>
+            {messages.length > 0 && (
+              <button
+                type="button"
+                onClick={handleExport}
+                className="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] text-muted-foreground hover:text-foreground hover:bg-muted/40 transition-colors"
+                title={t('agent.exportChat')}
+                aria-label={t('agent.exportChat')}
+              >
+                <Download className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">{t('agent.exportChat')}</span>
               </button>
             )}
           </div>
