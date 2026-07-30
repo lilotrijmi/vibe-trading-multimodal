@@ -161,6 +161,41 @@ def test_openai_compatible_provider_raises_on_error() -> None:
         provider.analyze(b"bytes", "prompt")
 
 
+def test_openai_compatible_provider_uses_langchain_invoke() -> None:
+    """When the client has no .chat() method, fall back to LangChain invoke()."""
+    class FakeLangChainClient:
+        def invoke(self, messages):
+            # Return an object with a .content attribute
+            return type("Resp", (), {"content": "langchain vision result"})()
+
+    provider = OpenAICompatibleVisionProvider(
+        client=FakeLangChainClient(),
+        model="gpt-4o",
+    )
+    result = provider.analyze(b"image-bytes", "describe")
+    assert result.description == "langchain vision result"
+    assert result.provider == "gpt-4o"
+
+
+def test_openai_compatible_provider_prefers_chat_over_invoke() -> None:
+    """When client has both, .chat() is used (preserves backwards compatibility)."""
+    captured = {}
+
+    class BothClient:
+        def chat(self, **kwargs):
+            captured["used"] = "chat"
+            return {"choices": [{"message": {"content": "via chat"}}]}
+
+        def invoke(self, messages):
+            captured["used"] = "invoke"
+            return type("Resp", (), {"content": "via invoke"})()
+
+    provider = OpenAICompatibleVisionProvider(client=BothClient(), model="gpt-4o")
+    result = provider.analyze(b"bytes", "prompt")
+    assert result.description == "via chat"
+    assert captured["used"] == "chat"
+
+
 def test_GenflowAi_provider_uses_messages_api() -> None:
     captured: dict = {}
 

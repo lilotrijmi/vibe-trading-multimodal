@@ -72,46 +72,74 @@ class _ChatClient(Protocol):
 
 
 class OpenAICompatibleVisionProvider(VisionProvider):
-    """Vision provider for OpenAI-compatible chat APIs."""
+    """Vision provider for OpenAI-compatible chat APIs.
 
-    def __init__(self, client: _ChatClient, model: str) -> None:
+    Accepts either a raw client with a ``chat()`` method (returns a dict) or a
+    LangChain ``ChatOpenAI`` (responds to ``invoke()`` with an ``AIMessage``).
+    The provider auto-detects which interface is in use.
+    """
+
+    def __init__(self, client: Any, model: str) -> None:
         self._client = client
         self._model = model
 
     def analyze(self, image: bytes, prompt: str) -> VisionResult:
         b64 = base64.b64encode(image).decode("ascii")
-        try:
-            response = self._client.chat(
-                model=self._model,
-                messages=[
+        messages = [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
                     {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {"url": f"data:image/png;base64,{b64}"},
-                            },
-                        ],
-                    }
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{b64}"},
+                    },
                 ],
-            )
+            }
+        ]
+
+        try:
+            if hasattr(self._client, "chat") and callable(getattr(self._client, "chat", None)):
+                # Raw httpx-like client: returns a dict with "choices".
+                response = self._client.chat(model=self._model, messages=messages)
+                content = response["choices"][0]["message"]["content"]
+            else:
+                # LangChain chat model: invoke() returns an AIMessage.
+                lc_messages = self._lc_messages(prompt, b64)
+                response = self._client.invoke(lc_messages)
+                content = response.content if hasattr(response, "content") else str(response)
+        except VisionProviderError:
+            raise
         except Exception as exc:
             raise VisionProviderError(
                 f"OpenAI-compatible vision call failed: {exc}"
-            ) from exc
-
-        try:
-            content = response["choices"][0]["message"]["content"]
-        except (KeyError, IndexError, TypeError) as exc:
-            raise VisionProviderError(
-                f"unexpected response shape: {response!r}"
             ) from exc
 
         if not isinstance(content, str) or not content.strip():
             raise VisionProviderError("provider returned empty content")
 
         return VisionResult(description=content.strip(), provider=self._model)
+
+    def _lc_messages(self, prompt: str, b64: str) -> list:
+        """Build a LangChain HumanMessage list with image+text content."""
+        try:
+            from langchain_core.messages import HumanMessage
+        except ImportError as exc:
+            raise VisionProviderError(
+                "LangChain messages not available; cannot use ChatOpenAI client"
+            ) from exc
+
+        return [
+            HumanMessage(
+                content=[
+                    {"type": "text", "text": prompt},
+                    {
+                        "type": "image_url",
+                        "image_url": {"url": f"data:image/png;base64,{b64}"},
+                    },
+                ]
+            )
+        ]
 
 
 class _GenflowAiClient(Protocol):
