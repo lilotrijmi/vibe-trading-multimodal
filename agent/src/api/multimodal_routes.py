@@ -30,6 +30,17 @@ from src.multimodal.vision_provider import VisionProvider
 logger = logging.getLogger(__name__)
 
 
+def _async_runner_with_loop(coro_func, *args, **kwargs):
+    """Run an async coroutine to completion on a fresh event loop.
+
+    Used inside sync request handlers that need to call async helpers
+    (such as the Exa client) without pulling in a full ASGI runtime.
+    """
+    import asyncio
+
+    return asyncio.new_event_loop().run_until_complete(coro_func(*args, **kwargs))
+
+
 async def _call_llm_with_context(prompt: str) -> str:
     """Call the agent's LLM (OpenAI-compatible) with the multimodal context.
 
@@ -330,29 +341,54 @@ async def chat(
 
     url_contents = []
     for url in url_list:
-        if _state.url_reader is None or _state.content_sanitizer is None:
-            break
-        try:
-            fetch_result = _state.url_reader.fetch(url)
-        except Exception as exc:
+        content_text: str | None = None
+        # Step 1: try the direct HTTP fetch (cheap, works for most sites).
+        if _state.url_reader is not None and _state.content_sanitizer is not None:
+            try:
+                fetch_result = _state.url_reader.fetch(url)
+                sanitized = _state.content_sanitizer.sanitize(
+                    fetch_result.text, source_url=fetch_result.final_url
+                )
+                content_text = sanitized.text
+            except Exception as exc:
+                logger.info(
+                    "direct fetch failed for %s: %s — will try Exa fallback",
+                    url, exc,
+                )
+
+        # Step 2: if direct fetch failed or returned empty, try Exa as a
+        # fallback (works for anti-bot sites like arkm.com, Etherscan, etc.).
+        if not content_text:
+            try:
+                exa = _get_exa_client()
+                if exa.is_configured:
+                    logger.info("fetching %s via Exa fallback", url)
+                    exa_results = _async_runner_with_loop(
+                        exa.get_contents([url], summary=True)
+                    )
+                    if exa_results:
+                        content_text = format_contents_as_text(exa_results)
+            except ExaError as exc:
+                logger.warning("Exa fallback failed for %s: %s", url, exc)
+            except Exception as exc:  # last-resort: never let Exa break the flow
+                logger.warning("Exa fallback error for %s: %s", url, exc)
+
+        if content_text:
+            url_contents.append(
+                AttachmentContext(type="url", source=url, content=content_text)
+            )
+        else:
             url_contents.append(
                 AttachmentContext(
                     type="url",
                     source=url,
-                    content=f"(fetch failed: {exc})",
+                    content=(
+                        "(fetch failed: direct HTTP and Exa fallback both unavailable. "
+                        "Check that the URL is publicly accessible, or try uploading a "
+                        "screenshot of the page instead.)"
+                    ),
                 )
             )
-            continue
-        sanitized = _state.content_sanitizer.sanitize(
-            fetch_result.text, source_url=fetch_result.final_url
-        )
-        url_contents.append(
-            AttachmentContext(
-                type="url",
-                source=url,
-                content=sanitized.text,
-            )
-        )
 
     packer = ContextPacker()
     ctx = packer.build(
