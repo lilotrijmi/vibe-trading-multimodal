@@ -123,13 +123,28 @@ def _make_ollama_provider() -> Any:
 
 
 def _build_http_client() -> Any:
-    """HTTP client for URL fetches."""
+    """HTTP client for URL fetches.
+
+    Uses a browser-like User-Agent and standard Accept headers so most public
+    news/blog sites do not reject the request with 403/401. Sites that still
+    block (e.g. JavaScript-rendered pages, anti-bot walls) should be fetched
+    via a dedicated scraping service (e.g. Exa, Jina Reader, Tavily) — those
+    can be wired in as alternative URL readers later.
+    """
     import httpx
 
     return httpx.Client(
-        timeout=10.0,
+        timeout=15.0,
         follow_redirects=True,
-        headers={"User-Agent": "Vibe-Trading-Multimodal/1.0"},
+        headers={
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9,id;q=0.8",
+        },
     )
 
 
