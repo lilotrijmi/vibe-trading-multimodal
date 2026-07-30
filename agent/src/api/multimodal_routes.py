@@ -66,8 +66,11 @@ def _get_active_vision_provider() -> Any:
     immediately. Returns ``None`` if vision is disabled or unconfigured.
     """
     if os.environ.get("VISION_ENABLED", "true").lower() in ("false", "0", "no"):
+        logger.info("vision: VISION_ENABLED=false, skipping")
         return None
-    if not os.environ.get("OPENAI_API_KEY") and not os.environ.get("ANTHROPIC_API_KEY"):
+    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        logger.info("vision: no API key in env (OPENAI_API_KEY/ANTHROPIC_API_KEY)")
         return None
 
     try:
@@ -78,7 +81,8 @@ def _get_active_vision_provider() -> Any:
             OllamaVisionProvider,
         )
         from langchain_openai import ChatOpenAI
-    except ImportError:
+    except ImportError as exc:
+        logger.warning("vision: imports failed: %s", exc)
         return None
 
     vision_model = os.environ.get("VISION_MODEL", "gpt-4o")
@@ -87,13 +91,17 @@ def _get_active_vision_provider() -> Any:
         or os.environ.get("ANTHROPIC_BASE_URL")
         or "https://api.openai.com/v1"
     )
-    api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")
 
     # Auto-detect Genflow
-    if api_key and api_key.startswith("gf-") and not os.environ.get("OPENAI_BASE_URL"):
+    if api_key.startswith("gf-") and not os.environ.get("OPENAI_BASE_URL"):
         base_url = "https://v1.genflow.id/v1"
 
     provider_name = os.environ.get("VISION_PROVIDER", "openai").lower()
+    logger.info(
+        "vision build: provider=%s model=%s base_url=%s key_prefix=%s",
+        provider_name, vision_model, base_url, api_key[:4] + "***",
+    )
+
     if provider_name in ("openai", "gpt-4o", "gpt-4-vision"):
         return OpenAICompatibleVisionProvider(
             client=ChatOpenAI(model=vision_model, api_key=api_key, base_url=base_url),
@@ -110,6 +118,7 @@ def _get_active_vision_provider() -> Any:
             model=vision_model,
             host=os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434"),
         )
+    logger.warning("vision: unknown provider %r, returning NoOp", provider_name)
     return NoOpVisionProvider()
 
 
@@ -268,6 +277,14 @@ async def chat(
         is_noop = state_vision is not None and type(state_vision).__name__ == "NoOpVisionProvider"
         env_vision = None if (state_vision and not is_noop) else _get_active_vision_provider()
         vision = state_vision if state_vision and not is_noop else env_vision
+        logger.info(
+            "vision selected: %s (state=%s, env=%s, enabled=%s, key=%s)",
+            type(vision).__name__ if vision else "None",
+            type(state_vision).__name__ if state_vision else "None",
+            type(env_vision).__name__ if env_vision else "None",
+            os.environ.get("VISION_ENABLED", "true"),
+            "set" if (os.environ.get("OPENAI_API_KEY") or os.environ.get("ANTHROPIC_API_KEY")) else "missing",
+        )
         if vision is not None:
             try:
                 vision_result = vision.analyze(
@@ -275,6 +292,11 @@ async def chat(
                     "Describe this chart or image for trading analysis. "
                     "Include any visible numbers, indicators, support/resistance "
                     "levels, and trend direction.",
+                )
+                logger.info(
+                    "vision success: provider=%s desc_len=%d",
+                    vision_result.provider,
+                    len(vision_result.description or ""),
                 )
                 image_descriptions.append(
                     AttachmentContext(
