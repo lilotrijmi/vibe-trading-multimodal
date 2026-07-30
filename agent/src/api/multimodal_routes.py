@@ -342,40 +342,49 @@ async def chat(
     url_contents = []
     for url in url_list:
         content_text: str | None = None
-        # Step 1: try the direct HTTP fetch (cheap, works for most sites).
-        if _state.url_reader is not None and _state.content_sanitizer is not None:
+        fetch_source = "direct"  # diagnostic label
+
+        # Step 1: PRIMARY — try Exa (works for anti-bot sites, JS-rendered pages,
+        # paywalls, geo-blocks, etc.). Exa is designed for AI agents and renders
+        # clean markdown, which is what we want to inject into the agent context.
+        try:
+            exa = _get_exa_client()
+            if exa.is_configured:
+                logger.info("fetching %s via Exa (primary)", url)
+                exa_results = _async_runner_with_loop(
+                    exa.get_contents([url], summary=True)
+                )
+                if exa_results:
+                    content_text = format_contents_as_text(exa_results)
+            else:
+                logger.info(
+                    "Exa not configured (EXA_API_KEY missing); falling back to direct fetch"
+                )
+        except ExaError as exc:
+            logger.info("Exa primary fetch failed for %s: %s", url, exc)
+        except Exception as exc:  # never let Exa errors break the flow
+            logger.warning("Exa primary fetch error for %s: %s", url, exc)
+
+        # Step 2: LAST RESORT — direct HTTP fetch (only if Exa is not configured
+        # or Exa failed). Cheap, but blocked by most anti-bot sites.
+        if not content_text and _state.url_reader is not None and _state.content_sanitizer is not None:
             try:
                 fetch_result = _state.url_reader.fetch(url)
                 sanitized = _state.content_sanitizer.sanitize(
                     fetch_result.text, source_url=fetch_result.final_url
                 )
                 content_text = sanitized.text
+                fetch_source = "direct (fallback)"
             except Exception as exc:
-                logger.info(
-                    "direct fetch failed for %s: %s — will try Exa fallback",
-                    url, exc,
-                )
-
-        # Step 2: if direct fetch failed or returned empty, try Exa as a
-        # fallback (works for anti-bot sites like arkm.com, Etherscan, etc.).
-        if not content_text:
-            try:
-                exa = _get_exa_client()
-                if exa.is_configured:
-                    logger.info("fetching %s via Exa fallback", url)
-                    exa_results = _async_runner_with_loop(
-                        exa.get_contents([url], summary=True)
-                    )
-                    if exa_results:
-                        content_text = format_contents_as_text(exa_results)
-            except ExaError as exc:
-                logger.warning("Exa fallback failed for %s: %s", url, exc)
-            except Exception as exc:  # last-resort: never let Exa break the flow
-                logger.warning("Exa fallback error for %s: %s", url, exc)
+                logger.warning("direct fetch fallback failed for %s: %s", url, exc)
 
         if content_text:
             url_contents.append(
-                AttachmentContext(type="url", source=url, content=content_text)
+                AttachmentContext(
+                    type="url",
+                    source=url,
+                    content=f"[fetched via {fetch_source}]\n\n{content_text}",
+                )
             )
         else:
             url_contents.append(
@@ -383,9 +392,10 @@ async def chat(
                     type="url",
                     source=url,
                     content=(
-                        "(fetch failed: direct HTTP and Exa fallback both unavailable. "
-                        "Check that the URL is publicly accessible, or try uploading a "
-                        "screenshot of the page instead.)"
+                        "(fetch failed: Exa (primary) and direct HTTP (fallback) both "
+                        "unavailable. Check that EXA_API_KEY is configured and the URL "
+                        "is publicly accessible, or try uploading a screenshot of the "
+                        "page instead.)"
                     ),
                 )
             )
