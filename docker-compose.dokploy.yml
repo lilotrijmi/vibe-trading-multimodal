@@ -36,7 +36,7 @@ services:
       - vibe-data:/app/agent/data
       - ./agent/.env:/app/agent/.env
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8899/live') || exit 1"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8899/live')"]
       interval: 30s
       timeout: 5s
       retries: 3

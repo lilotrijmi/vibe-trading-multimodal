@@ -166,9 +166,14 @@ def init_multimodal_subsystem() -> None:
     )
     db_path_str = os.environ.get("VIBE_TRADING_DB_PATH")
     if db_path_str:
-        db_path = _resolve_writable_path_from(
-            Path(db_path_str).parent, filename=Path(db_path_str).name
-        )
+        configured_db_path = Path(db_path_str)
+        if not _is_writable_dir(configured_db_path.parent):
+            raise RuntimeError(
+                "VIBE_TRADING_DB_PATH is not writable: "
+                f"{configured_db_path}. Mount a writable persistent volume at "
+                f"{configured_db_path.parent}."
+            )
+        db_path = configured_db_path
     else:
         db_path = _resolve_writable_path(
             "VIBE_TRADING_DB_PATH",

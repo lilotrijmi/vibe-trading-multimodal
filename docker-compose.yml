@@ -7,6 +7,8 @@ services:
       - agent/.env
     environment:
       - VIBE_TRADING_TRUST_DOCKER_LOOPBACK=1
+      - VIBE_TRADING_DB_PATH=/app/agent/data/vibe_trading.db
+      - MULTIMODAL_STORAGE_DIR=/app/agent/data/multimodal
       # Ollama runs on the host; from inside the container "localhost" is the
       # container itself, so default to reaching the host via host.docker.internal.
       # Override by exporting OLLAMA_BASE_URL (or setting it in a top-level .env)
@@ -26,6 +28,9 @@ services:
       - vibe-home:/home/vibe/.vibe-trading
       - vibe-swarm-runs:/app/agent/.swarm/runs
       - vibe-uploads:/app/agent/uploads
+      # Persist SQLite users, auth sessions, and multimodal metadata. Without
+      # this mount the read-only rootfs redirects the DB to ephemeral /tmp.
+      - vibe-data:/app/agent/data
       # Persist Web-UI-driven agent/.env edits (_write_env_values in
       # src/api/helpers.py writes to /app/agent/.env) across container recreation.
       # env_file above still seeds the initial boot env from the same file.
@@ -80,3 +85,4 @@ volumes:
   vibe-home:
   vibe-swarm-runs:
   vibe-uploads:
+  vibe-data:

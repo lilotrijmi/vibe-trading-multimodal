@@ -75,7 +75,16 @@ def init_db(db_path: Path) -> None:
             cursor.close()
 
     _SessionLocal = sessionmaker(bind=_engine, autoflush=False, autocommit=False)
-    Base.metadata.create_all(_engine)
+    try:
+        Base.metadata.create_all(_engine)
+    except Exception as exc:
+        _engine.dispose()
+        _engine = None
+        _SessionLocal = None
+        raise RuntimeError(
+            f"Cannot initialize database {db_path} "
+            f"(is the volume mounted and writable?): {exc}"
+        ) from exc
 
 
 def get_session() -> Session:

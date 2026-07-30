@@ -122,7 +122,7 @@ VIBE_TRADING_DB_PATH=/app/agent/data/vibe_trading.db
 
 ### Step 6: Konfigurasi Volumes
 
-Di tab **Volumes**, tambahkan persistent volumes. **WAJIB**:
+Di tab **Volumes**, tambahkan persistent volumes. **WAJIB**. Deployment Git Provider/Application hanya membaca `Dockerfile`; volume dari `docker-compose.dokploy.yml` tidak diterapkan otomatis. Karena itu volume di bawah harus benar-benar terlihat di tab **Advanced → Volumes** aplikasi Dokploy.
 
 | Volume Name | Mount Path |
 |---|---|
@@ -158,8 +158,15 @@ Arahkan DNS record `trading.yourdomain.com` ke IP VPS Anda (A record).
 2. Tunggu build selesai (5-10 menit untuk first build).
 3. Cek **Logs** tab untuk memastikan tidak ada error.
 4. Setelah status **Running**, akses `https://trading.yourdomain.com`.
+5. Jika log startup memuat `falling back to /tmp/vibe_trading`, anggap deployment **gagal** meskipun health check hijau. Periksa ownership/write permission volume `vibe-data`; user non-root `vibe` harus dapat menulis `/app/agent/data`.
 
 ### Step 10: Verifikasi
+
+Health check hanya membuktikan proses hidup, bukan bahwa database persisten. Login sebagai admin, buka endpoint `GET /api/auth/storage`, lalu pastikan:
+
+- `db_path` adalah `/app/agent/data/vibe_trading.db`;
+- `is_persistent` bernilai `true`;
+- `db_path` bukan `/tmp/vibe_trading/vibe_trading.db`.
 
 ```bash
 # Health check
