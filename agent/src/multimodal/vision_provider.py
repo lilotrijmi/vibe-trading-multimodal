@@ -122,8 +122,16 @@ class OpenAICompatibleVisionProvider(VisionProvider):
         if not isinstance(content, str) or not content.strip():
             # Surface the actual response so empty content can be debugged
             # (e.g. content-filter refusal, wrong model name, wrong endpoint).
+            # Common causes:
+            #  - Model name typo (try the exact name from the provider's catalog)
+            #  - Model is text-only (use a vision-capable model like gpt-4o)
+            #  - Content filter / safety refusal
+            #  - Provider needs a different image content block format
             raise VisionProviderError(
-                f"provider returned empty content (response snippet: {response_repr})"
+                f"provider returned empty content for model={self._model!r}. "
+                f"Try a vision-capable model (e.g. gpt-4o, glm-4v) or "
+                f"check the model name in your provider's catalog. "
+                f"Response: {response_repr}"
             )
 
         return VisionResult(description=content.strip(), provider=self._model)
