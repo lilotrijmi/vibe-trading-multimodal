@@ -27,6 +27,7 @@ import logging
 import os
 import secrets
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -88,6 +89,27 @@ class UserUpdateRequest(BaseModel):
 
 class UserListResponse(BaseModel):
     users: list[CurrentUserResponse]
+
+
+class StorageInfoResponse(BaseModel):
+    """Diagnostic info about the database and storage backends.
+
+    Useful when verifying that the database is on a persistent volume
+    (so it survives container restarts). If ``is_persistent`` is False the
+    database file lives on the container's ephemeral filesystem and any
+    redeploy will wipe user accounts, sessions, and chat history.
+    """
+
+    db_path: str
+    db_exists: bool
+    db_size_bytes: int
+    user_count: int
+    session_count: int
+    rate_limit_log_count: int
+    multimodal_storage_dir: str
+    multimodal_storage_exists: bool
+    is_persistent: bool
+    note: str
 
 
 # ---------------------------------------------------------------------------
@@ -394,5 +416,63 @@ def register_user_routes(app: Any) -> None:
         session.delete(user)
         session.commit()
         return Response(status_code=204)
+
+    @router.get("/storage", response_model=StorageInfoResponse)
+    def storage_info(
+        admin: User = Depends(require_admin_dep),
+        session: SqlSession = Depends(get_session),
+    ) -> StorageInfoResponse:
+        """Diagnostic info about database persistence and storage.
+
+        Returns paths, file existence, row counts, and a ``is_persistent``
+        hint. If the database lives in a container overlay rather than a
+        mounted volume, ``is_persistent`` is False and any redeploy will
+        lose user accounts. Use this to verify your Dokploy volume setup.
+        """
+        import os
+        from src.db.auth_models import RateLimitEntry as RLE
+
+        db_path_str = os.environ.get("VIBE_TRADING_DB_PATH", "/app/agent/data/vibe_trading.db")
+        db_path = Path(db_path_str)
+        db_exists = db_path.exists()
+        db_size = db_path.stat().st_size if db_exists else 0
+
+        # Heuristic: a /app/... path that does not live under any mounted
+        # volume is ephemeral. Look at ``/proc/mounts`` for any mount that
+        # contains the db path's parent directory.
+        is_persistent = False
+        try:
+            with open("/proc/mounts") as f:
+                for line in f:
+                    parts = line.split()
+                    if len(parts) >= 2:
+                        mount_point = parts[1]
+                        if str(db_path.parent.resolve()).startswith(mount_point):
+                            # /app and similar overlay mounts do not persist.
+                            if not mount_point.startswith("/proc") and mount_point != "/":
+                                is_persistent = True
+                                break
+        except Exception:
+            pass
+
+        mm_dir = Path(os.environ.get("MULTIMODAL_STORAGE_DIR", "/app/agent/data/multimodal"))
+        mm_exists = mm_dir.exists()
+
+        return StorageInfoResponse(
+            db_path=db_path_str,
+            db_exists=db_exists,
+            db_size_bytes=db_size,
+            user_count=int(session.query(User).count()),
+            session_count=int(session.query(AuthSession).count()),
+            rate_limit_log_count=int(session.query(RLE).count()),
+            multimodal_storage_dir=str(mm_dir),
+            multimodal_storage_exists=mm_exists,
+            is_persistent=is_persistent,
+            note=(
+                "If is_persistent is False, mount a Dokploy volume at the parent "
+                "directory of db_path (or set VIBE_TRADING_DB_PATH to a path on "
+                "a mounted volume). Otherwise redeploys will wipe user data."
+            ),
+        )
 
     app.include_router(router)
