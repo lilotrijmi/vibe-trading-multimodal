@@ -1,5 +1,14 @@
 [
   {
+    "name": "genflow",
+    "label": "Genflow (OpenAI-compatible gateway)",
+    "api_key_env": "OPENAI_API_KEY",
+    "base_url_env": "OPENAI_BASE_URL",
+    "default_model": "glm-5-2",
+    "default_base_url": "https://v1.genflow.id/v1",
+    "api_key_required": true
+  },
+  {
     "name": "openrouter",
     "label": "OpenRouter",
     "api_key_env": "OPENROUTER_API_KEY",

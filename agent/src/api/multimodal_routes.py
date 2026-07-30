@@ -102,7 +102,13 @@ def _get_active_vision_provider() -> Any:
         provider_name, vision_model, base_url, api_key[:4] + "***",
     )
 
-    if provider_name in ("openai", "gpt-4o", "gpt-4-vision"):
+    if provider_name in (
+        "openai",
+        "gpt-4o",
+        "gpt-4-vision",
+        "genflow",  # Genflow API is OpenAI-compatible
+        "minimax",  # Common alias for custom OpenAI-compatible gateways
+    ):
         return OpenAICompatibleVisionProvider(
             client=ChatOpenAI(model=vision_model, api_key=api_key, base_url=base_url),
             model=vision_model,
