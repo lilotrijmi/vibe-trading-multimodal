@@ -30,17 +30,6 @@ from src.multimodal.vision_provider import VisionProvider
 logger = logging.getLogger(__name__)
 
 
-def _async_runner_with_loop(coro_func, *args, **kwargs):
-    """Run an async coroutine to completion on a fresh event loop.
-
-    Used inside sync request handlers that need to call async helpers
-    (such as the Exa client) without pulling in a full ASGI runtime.
-    """
-    import asyncio
-
-    return asyncio.new_event_loop().run_until_complete(coro_func(*args, **kwargs))
-
-
 async def _call_llm_with_context(prompt: str) -> str:
     """Call the agent's LLM (OpenAI-compatible) with the multimodal context.
 
@@ -351,14 +340,12 @@ async def chat(
             exa = _get_exa_client()
             if exa.is_configured:
                 logger.info("fetching %s via Exa (primary)", url)
-                # Pass the bound method + args (not the awaited coroutine) to
-                # ``_async_runner_with_loop`` so it can re-construct the coroutine
-                # on its own event loop. Calling the async method here would
-                # return a coroutine object, which would then fail with
-                # "'coroutine' object is not callable".
-                exa_results = _async_runner_with_loop(
-                    exa.get_contents, [url], summary=True
-                )
+                # Await directly on the running event loop — the surrounding
+                # request handler is ``async def``, so there is no need to
+                # spin up a fresh event loop (which is what triggered the
+                # "Cannot run the event loop while another loop is running"
+                # error previously).
+                exa_results = await exa.get_contents([url], summary=True)
                 if exa_results:
                     content_text = format_contents_as_text(exa_results)
             else:
