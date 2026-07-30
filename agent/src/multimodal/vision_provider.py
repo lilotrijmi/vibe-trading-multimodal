@@ -98,15 +98,19 @@ class OpenAICompatibleVisionProvider(VisionProvider):
             }
         ]
 
+        response_repr = "<unavailable>"
+        content: Any = None
         try:
             if hasattr(self._client, "chat") and callable(getattr(self._client, "chat", None)):
                 # Raw httpx-like client: returns a dict with "choices".
                 response = self._client.chat(model=self._model, messages=messages)
+                response_repr = repr(response)[:500]
                 content = response["choices"][0]["message"]["content"]
             else:
                 # LangChain chat model: invoke() returns an AIMessage.
                 lc_messages = self._lc_messages(prompt, b64)
                 response = self._client.invoke(lc_messages)
+                response_repr = repr(response)[:500]
                 content = response.content if hasattr(response, "content") else str(response)
         except VisionProviderError:
             raise
@@ -116,7 +120,11 @@ class OpenAICompatibleVisionProvider(VisionProvider):
             ) from exc
 
         if not isinstance(content, str) or not content.strip():
-            raise VisionProviderError("provider returned empty content")
+            # Surface the actual response so empty content can be debugged
+            # (e.g. content-filter refusal, wrong model name, wrong endpoint).
+            raise VisionProviderError(
+                f"provider returned empty content (response snippet: {response_repr})"
+            )
 
         return VisionResult(description=content.strip(), provider=self._model)
 
