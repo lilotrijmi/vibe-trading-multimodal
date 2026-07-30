@@ -1,12 +1,13 @@
 import { useTranslation } from "react-i18next";
 import { useEffect, useRef, useState } from "react";
 import { Link, Outlet, useLocation, useSearchParams } from "react-router";
-import { Activity, BarChart3, Bot, Check, ChevronDown, FileText, Languages, Menu, Moon, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2, X } from "lucide-react";
+import { Activity, BarChart3, Bot, Check, ChevronDown, FileText, Languages, LogOut, Menu, Moon, Shield, Sun, Plus, Trash2, Pencil, MessageSquare, ChevronsLeft, ChevronsRight, Settings, Layers, Loader2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useDarkMode } from "@/hooks/useDarkMode";
 import { api, type SessionItem } from "@/lib/api";
 import { useAgentStore } from "@/stores/agent";
 import { ConnectionBanner } from "@/components/layout/ConnectionBanner";
+import { logout, me, type CurrentUser } from "@/lib/auth";
 import { SUPPORTED_LANGUAGES } from "@/i18n";
 
 // APP_VERSION is sourced from i18n locale files (app.version key) to keep a
@@ -32,6 +33,24 @@ export function Layout() {
   const sseStatus = useAgentStore(s => s.sseStatus);
   const sseRetryAttempt = useAgentStore(s => s.sseRetryAttempt);
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem("qa-sidebar") === "collapsed");
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+    me()
+      .then((u) => { if (alive) setCurrentUser(u); })
+      .catch(() => { if (alive) setCurrentUser(null); });
+    return () => { alive = false; };
+  }, [pathname]);
+
+  const handleLogout = async () => {
+    try {
+      await logout();
+    } finally {
+      setCurrentUser(null);
+      window.location.href = "/login";
+    }
+  };
 
   const activeSessionId = searchParams.get("session");
   const streamingSessionId = useAgentStore(s => s.streamingSessionId);
@@ -279,6 +298,57 @@ export function Layout() {
             </>
           )}
         </div>
+
+        {/* User info + admin link + logout */}
+        {currentUser && (
+          <div className="border-t p-2.5 space-y-1.5">
+            {currentUser.role === "admin" && (
+              <Link
+                to="/admin/users"
+                className={cn(
+                  "flex items-center gap-2 rounded-md text-xs transition-colors",
+                  collapsed ? "justify-center p-2" : "px-3 py-1.5",
+                  pathname.startsWith("/admin")
+                    ? "bg-primary/10 text-primary font-medium"
+                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+                title={collapsed ? "Admin → Users" : undefined}
+                data-testid="admin-users-link"
+              >
+                <Shield className="h-3.5 w-3.5 shrink-0" />
+                {!collapsed && "Admin → Users"}
+              </Link>
+            )}
+            <div
+              className={cn(
+                "flex items-center gap-2 text-xs",
+                collapsed ? "justify-center" : "px-1.5",
+              )}
+            >
+              <div className="h-6 w-6 rounded-full bg-primary/15 text-primary flex items-center justify-center text-[11px] font-semibold shrink-0">
+                {currentUser.username[0]?.toUpperCase() ?? "?"}
+              </div>
+              {!collapsed && (
+                <div className="flex-1 min-w-0">
+                  <div className="truncate font-medium">{currentUser.username}</div>
+                  <div className="truncate text-[10px] text-muted-foreground">
+                    {currentUser.role} · {currentUser.rate_limit_per_hour}/h
+                  </div>
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={handleLogout}
+                className="inline-flex items-center justify-center h-7 w-7 rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+                aria-label="Sign out"
+                title="Sign out"
+                data-testid="sidebar-logout"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </div>
+        )}
       </aside>
 
       {/* Main */}
