@@ -125,13 +125,16 @@ class OpenAICompatibleVisionProvider(VisionProvider):
             # Common causes:
             #  - Model name typo (try the exact name from the provider's catalog)
             #  - Model is text-only (use a vision-capable model like gpt-4o)
+            #  - Provider does not route the requested model to a vision backend
             #  - Content filter / safety refusal
             #  - Provider needs a different image content block format
             raise VisionProviderError(
                 f"provider returned empty content for model={self._model!r}. "
-                f"Try a vision-capable model (e.g. gpt-4o, glm-4v) or "
-                f"check the model name in your provider's catalog. "
-                f"Response: {response_repr}"
+                f"This often means the model is not actually vision-capable on the "
+                f"configured endpoint (e.g. an OpenAI-compatible gateway may not "
+                f"route a text model to a vision backend). Try a known vision "
+                f"model (gpt-4o, glm-4v, claude-3.5-sonnet) or a different "
+                f"provider. Response: {response_repr}"
             )
 
         return VisionResult(description=content.strip(), provider=self._model)
