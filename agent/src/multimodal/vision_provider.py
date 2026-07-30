@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -108,10 +109,25 @@ class OpenAICompatibleVisionProvider(VisionProvider):
                 content = response["choices"][0]["message"]["content"]
             else:
                 # LangChain chat model: invoke() returns an AIMessage.
-                lc_messages = self._lc_messages(prompt, b64)
-                response = self._client.invoke(lc_messages)
-                response_repr = repr(response)[:500]
-                content = response.content if hasattr(response, "content") else str(response)
+                # Some OpenAI-compatible gateways (e.g. Genflow) ignore the
+                # ``stream=False`` flag and return an SSE-formatted body
+                # (``data: {...}``) instead of a JSON object. LangChain's
+                # parser crashes on that ("'str' object has no attribute
+                # 'model_dump'"). When that happens, fall back to a direct
+                # httpx request with manual SSE parsing.
+                try:
+                    lc_messages = self._lc_messages(prompt, b64)
+                    response = self._client.invoke(lc_messages)
+                    response_repr = repr(response)[:500]
+                    content = (
+                        response.content if hasattr(response, "content") else str(response)
+                    )
+                except Exception as inner_exc:
+                    err_str = str(inner_exc)
+                    if "'str' object has no attribute 'model_dump'" in err_str or "model_dump" in err_str:
+                        content = self._invoke_via_raw_http(prompt, b64, messages)
+                    else:
+                        raise
         except VisionProviderError:
             raise
         except Exception as exc:
@@ -120,14 +136,6 @@ class OpenAICompatibleVisionProvider(VisionProvider):
             ) from exc
 
         if not isinstance(content, str) or not content.strip():
-            # Surface the actual response so empty content can be debugged
-            # (e.g. content-filter refusal, wrong model name, wrong endpoint).
-            # Common causes:
-            #  - Model name typo (try the exact name from the provider's catalog)
-            #  - Model is text-only (use a vision-capable model like gpt-4o)
-            #  - Provider does not route the requested model to a vision backend
-            #  - Content filter / safety refusal
-            #  - Provider needs a different image content block format
             raise VisionProviderError(
                 f"provider returned empty content for model={self._model!r}. "
                 f"This often means the model is not actually vision-capable on the "
@@ -138,6 +146,80 @@ class OpenAICompatibleVisionProvider(VisionProvider):
             )
 
         return VisionResult(description=content.strip(), provider=self._model)
+
+    def _invoke_via_raw_http(
+        self, prompt: str, b64: str, messages: list[dict[str, Any]]
+    ) -> str:
+        """Fallback when LangChain can't parse the provider's response.
+
+        Bypasses LangChain entirely: builds a raw httpx POST to the chat
+        completions endpoint and manually parses a Server-Sent Events
+        (SSE) stream if ``stream=False`` is ignored by the gateway.
+        Returns the concatenated assistant content.
+        """
+        import json
+        import httpx  # local import — provider may run without it otherwise
+
+        base_url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        api_key = os.environ.get("OPENAI_API_KEY", "")
+        if not api_key:
+            raise VisionProviderError("OPENAI_API_KEY not set")
+
+        # Try with stream=False first; if the gateway ignores it, fall back to
+        # parsing SSE.
+        payload = {
+            "model": self._model,
+            "stream": False,
+            "messages": messages,
+            "max_tokens": 1024,
+        }
+        try:
+            response = httpx.post(
+                f"{base_url.rstrip('/')}/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=60.0,
+            )
+        except Exception as exc:
+            raise VisionProviderError(f"raw HTTP call failed: {exc}") from exc
+
+        text = response.text
+        # Plain JSON response
+        if response.headers.get("content-type", "").startswith("application/json"):
+            try:
+                data = response.json()
+                return data["choices"][0]["message"]["content"] or ""
+            except Exception as exc:
+                raise VisionProviderError(
+                    f"unexpected JSON response: {text[:300]}"
+                ) from exc
+
+        # SSE response: collect content from each "data: {...}" chunk.
+        if text.lstrip().startswith("data:"):
+            chunks: list[str] = []
+            for line in text.splitlines():
+                line = line.strip()
+                if not line.startswith("data:"):
+                    continue
+                payload_str = line[len("data:"):].strip()
+                if not payload_str or payload_str == "[DONE]":
+                    continue
+                try:
+                    data = json.loads(payload_str)
+                    delta = data["choices"][0].get("delta") or {}
+                    chunk = delta.get("content")
+                    if chunk:
+                        chunks.append(chunk)
+                except Exception:
+                    continue
+            return "".join(chunks)
+
+        raise VisionProviderError(
+            f"unexpected response content-type and body: {response.headers.get('content-type')} | {text[:300]}"
+        )
 
     def _lc_messages(self, prompt: str, b64: str) -> list:
         """Build a LangChain HumanMessage list with image+text content."""
