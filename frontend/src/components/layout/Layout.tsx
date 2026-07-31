@@ -148,14 +148,15 @@ export function Layout() {
                 className={cn(
                   "flex items-center rounded-md text-sm transition-colors",
                   collapsed ? "justify-center p-2" : "gap-3 px-3 py-2",
+                  "md:gap-3 md:px-3 md:py-2 justify-center gap-0 px-2 py-2",
                   (to === "/" ? pathname === "/" : pathname.startsWith(to))
                     ? "bg-primary/10 text-primary font-medium"
                     : "text-muted-foreground hover:bg-muted hover:text-foreground"
                 )}
-                title={collapsed ? text : undefined}
+                title={collapsed ? text : text}
               >
                 <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
-                {!collapsed && text}
+                <span className="hidden md:inline">{text}</span>
               </Link>
             );
           })}
