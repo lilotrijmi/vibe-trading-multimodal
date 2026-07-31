@@ -1551,6 +1551,23 @@ export function Agent() {
               {t("agent.uploading")}
             </div>
           )}
+          {/* Image/URL attachment strip — kept outside the rounded composer so
+              selected attachments never consume the text-entry area. */}
+          <MultimodalAttachment
+            onChange={(data) => {
+              if (data === null) {
+                setMultimodalAttachment(null);
+              } else if (data.type === "image") {
+                setMultimodalAttachment({
+                  type: "image",
+                  file: data.file,
+                  previewUrl: data.previewUrl,
+                });
+              } else {
+                setMultimodalAttachment({ type: "url", url: data.url });
+              }
+            }}
+          />
           {/* Persistent kill switch — distinct from the per-turn Stop button
               above; disables all live order activity (SPEC Consent §4).
               Given a top border + extra top padding so this safety-critical
@@ -1581,7 +1598,10 @@ export function Agent() {
               the attachment FAB + textarea + send/stop button. Export lives
               outside the composer so it doesn't crowd the row on mobile. */}
           <div className="flex gap-1.5 sm:gap-2 items-stretch">
-            <div className="flex-1 min-w-0 flex items-end gap-1.5 sm:gap-2 rounded-2xl border bg-muted/30 dark:bg-muted/20 shadow-sm focus-within:ring-2 focus-within:ring-primary/30 transition-shadow p-1.5 sm:p-2">
+            <div
+              data-testid="chat-composer"
+              className="flex-1 min-w-0 flex items-end gap-1.5 sm:gap-2 rounded-2xl border bg-muted/30 dark:bg-muted/20 shadow-sm focus-within:ring-2 focus-within:ring-primary/30 transition-shadow p-1.5 sm:p-2"
+            >
             {/* "+" menu: PDF upload + Swarm presets */}
             <div className="relative shrink-0" ref={uploadMenuRef}>
               <button
@@ -1688,18 +1708,6 @@ export function Agent() {
               accept=".pdf,.docx,.xlsx,.xls,.pptx,.csv,.tsv,.txt,.md,.log,.json,.yaml,.yml,.toml,.html,.xml,.rst,.png,.jpg,.jpeg,.gif,.bmp,.webp,.tiff"
               onChange={handleFileSelect}
               className="hidden"
-            />
-            {/* Multimodal attachment (image + URL) — visual + analysis pipeline */}
-            <MultimodalAttachment
-              onChange={(data) => {
-                if (data === null) {
-                  setMultimodalAttachment(null);
-                } else if (data.type === "image") {
-                  setMultimodalAttachment({ type: "image", file: data.file, previewUrl: data.previewUrl });
-                } else {
-                  setMultimodalAttachment({ type: "url", url: data.url });
-                }
-              }}
             />
             <textarea
               ref={inputRef}
@@ -1824,13 +1832,8 @@ export function Agent() {
             )}
             </div>
           </div>
-          {/* Secondary toolbar row: multimodal chip (when present) + export */}
-          <div className="flex items-center justify-between gap-2 px-1">
-            <div className="flex-1 min-w-0">
-              {/* The MultimodalAttachment chip (image/url preview) lives outside
-                  the chat composer so it floats above the input on mobile and
-                  doesn't shift the Send button. */}
-            </div>
+          {/* Secondary toolbar row: export */}
+          <div className="flex items-center justify-end gap-2 px-1">
             {messages.length > 0 && (
               <button
                 type="button"
