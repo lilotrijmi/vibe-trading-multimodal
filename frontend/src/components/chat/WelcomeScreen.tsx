@@ -220,8 +220,9 @@ export function WelcomeScreen({ onExample }: Props) {
         </div>
       </div>
 
-      {/* Capability chips */}
-      <div className="flex flex-wrap justify-center gap-2 max-w-lg">
+      {/* Capability chips — hidden on mobile to keep the welcome surface tidy;
+          the example category grid below already gives mobile users a way in. */}
+      <div className="hidden md:flex flex-wrap justify-center gap-2 max-w-lg">
         {CAPABILITY_CHIP_KEYS.map((key) => (
           <span
             key={key}

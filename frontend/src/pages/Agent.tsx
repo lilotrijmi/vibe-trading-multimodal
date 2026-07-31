@@ -1824,20 +1824,6 @@ export function Agent() {
             )}
             </div>
           </div>
-          {/* Mobile-only floating Image FAB so the Image action is always
-              visible and easy to reach above the chat composer. Desktop keeps
-              the in-row "+" menu trigger as before. */}
-          <button
-            type="button"
-            onClick={() => window.dispatchEvent(new CustomEvent("multimodal:open-image"))}
-            disabled={status === "streaming" || uploading}
-            className="md:hidden fixed z-30 bottom-24 right-4 inline-flex items-center justify-center h-12 w-12 rounded-full bg-primary text-primary-foreground shadow-lg hover:opacity-90 transition-opacity disabled:opacity-40"
-            title={t("agent.attachImage", "Image")}
-            aria-label={t("agent.attachImage", "Image")}
-            data-testid="mobile-image-fab"
-          >
-            <Image className="h-5 w-5" />
-          </button>
           {/* Secondary toolbar row: multimodal chip (when present) + export */}
           <div className="flex items-center justify-between gap-2 px-1">
             <div className="flex-1 min-w-0">
