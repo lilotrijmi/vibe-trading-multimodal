@@ -1552,9 +1552,11 @@ export function Agent() {
             </div>
           )}
           {/* Image/URL attachment strip — kept outside the rounded composer so
-              selected attachments never consume the text-entry area. */}
-          <MultimodalAttachment
-            onChange={(data) => {
+              selected attachments never consume the text-entry area. Contents
+              establish spacing only while visible; the listener host stays mounted. */}
+          <div className="[&:not(:has(>div>_:not(.hidden)))]:hidden">
+            <MultimodalAttachment
+              onChange={(data) => {
               if (data === null) {
                 setMultimodalAttachment(null);
               } else if (data.type === "image") {
@@ -1566,8 +1568,9 @@ export function Agent() {
               } else {
                 setMultimodalAttachment({ type: "url", url: data.url });
               }
-            }}
-          />
+              }}
+            />
+          </div>
           {/* Persistent kill switch — distinct from the per-turn Stop button
               above; disables all live order activity (SPEC Consent §4).
               Given a top border + extra top padding so this safety-critical
@@ -1597,6 +1600,7 @@ export function Agent() {
           {/* ChatGPT/Gemini-style chat composer: one rounded container holding
               the attachment FAB + textarea + send/stop button. Export lives
               outside the composer so it doesn't crowd the row on mobile. */}
+          {/* chat-composer:start */}
           <div className="flex gap-1.5 sm:gap-2 items-stretch">
             <div
               data-testid="chat-composer"
@@ -1611,6 +1615,7 @@ export function Agent() {
                 className="w-9 h-9 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 rounded-full flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors disabled:opacity-40"
                 title={t("agent.moreOptions")}
                 aria-label={t("agent.moreOptions")}
+                data-testid="composer-attachment-trigger"
               >
                 <Plus className="h-4 w-4" />
               </button>
@@ -1806,6 +1811,7 @@ export function Agent() {
                   : t("agent.placeholder")
               }
               aria-label={t("agent.messageInputLabel")}
+              data-testid="composer-textarea"
               className="flex-1 min-w-0 bg-transparent px-2 sm:px-3 py-2 sm:py-2.5 text-sm focus:outline-none resize-none max-h-40 min-h-[36px] leading-relaxed"
               disabled={status === "streaming"}
             />
@@ -1816,6 +1822,7 @@ export function Agent() {
                 className="shrink-0 w-9 h-9 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 rounded-full bg-destructive text-destructive-foreground flex items-center justify-center hover:opacity-90 transition-opacity"
                 title={t('agent.stopGeneration')}
                 aria-label={t('agent.stopGeneration')}
+                data-testid="composer-submit-control"
               >
                 <Square className="h-4 w-4" />
               </button>
@@ -1826,12 +1833,14 @@ export function Agent() {
                 className="shrink-0 w-9 h-9 min-h-[44px] min-w-[44px] sm:min-h-0 sm:min-w-0 rounded-full bg-primary text-primary-foreground flex items-center justify-center disabled:opacity-40 hover:opacity-90 transition-opacity"
                 title={t("agent.send")}
                 aria-label={t("agent.send")}
+                data-testid="composer-submit-control"
               >
                 <Send className="h-4 w-4" />
               </button>
             )}
             </div>
           </div>
+          {/* chat-composer:end */}
           {/* Secondary toolbar row: export */}
           <div className="flex items-center justify-end gap-2 px-1">
             {messages.length > 0 && (

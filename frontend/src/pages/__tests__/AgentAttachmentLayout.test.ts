@@ -10,27 +10,38 @@ const agentSource = readFileSync(
   "utf8",
 );
 
-const composerMarker = 'data-testid="chat-composer"';
+const composerStartMarker = "{/* chat-composer:start */}";
+const composerEndMarker = "{/* chat-composer:end */}";
 const attachmentMarker = "<MultimodalAttachment";
 
-describe("Agent attachment layout", () => {
-  it("mounts multimodal attachments once above the rounded composer", () => {
-    const attachmentMatches = agentSource.match(/<MultimodalAttachment\b/g) ?? [];
-    const attachmentIndex = agentSource.indexOf(attachmentMarker);
-    const composerIndex = agentSource.indexOf(composerMarker);
+function getComposerSource(): string {
+  const composerStart = agentSource.indexOf(composerStartMarker);
+  const composerEnd = agentSource.indexOf(composerEndMarker);
 
-    expect(attachmentMatches).toHaveLength(1);
+  expect(composerStart).toBeGreaterThan(-1);
+  expect(composerEnd).toBeGreaterThan(composerStart);
+  return agentSource.slice(composerStart, composerEnd + composerEndMarker.length);
+}
+
+describe("Agent attachment layout", () => {
+  it("mounts multimodal attachments once outside the full rounded composer", () => {
+    const attachmentMatches = agentSource.split(attachmentMarker).length - 1;
+    const attachmentIndex = agentSource.indexOf(attachmentMarker);
+    const composerStart = agentSource.indexOf(composerStartMarker);
+    const composerSource = getComposerSource();
+
+    expect(attachmentMatches).toBe(1);
     expect(attachmentIndex).toBeGreaterThan(-1);
-    expect(composerIndex).toBeGreaterThan(-1);
-    expect(attachmentIndex).toBeLessThan(composerIndex);
+    expect(attachmentIndex).toBeLessThan(composerStart);
+    expect(composerSource).not.toContain(attachmentMarker);
   });
 
-  it("keeps the text input section free of multimodal attachment UI", () => {
-    const composerIndex = agentSource.indexOf(composerMarker);
-    const textareaIndex = agentSource.indexOf("<textarea", composerIndex);
-    const composerPrefix = agentSource.slice(composerIndex, textareaIndex);
+  it("keeps every primary composer control inside the composer boundary", () => {
+    const composerSource = getComposerSource();
 
-    expect(textareaIndex).toBeGreaterThan(composerIndex);
-    expect(composerPrefix).not.toContain(attachmentMarker);
+    expect(composerSource).toContain('data-testid="composer-attachment-trigger"');
+    expect(composerSource).toContain('data-testid="composer-textarea"');
+    expect(composerSource).toContain('data-testid="composer-submit-control"');
+    expect(composerSource).toContain('data-testid="chat-composer"');
   });
 });
